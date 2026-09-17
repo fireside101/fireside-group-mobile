@@ -52,6 +52,19 @@ class AuthService {
   Future<bool> isSignedIn() => _googleSignIn.isSignedIn();
 
   Future<AuthSession?> signIn() async {
+    // DEV BYPASS: Auto-login for UI development
+    final session = const AuthSession(
+      name: 'Developer User',
+      email: 'developer@fireside.africa',
+      photoUrl: null,
+    );
+    await _secureStorage.write(
+      key: _sessionKey,
+      value: jsonEncode(session.toJson()),
+    );
+    return session;
+
+    /*
     final account = await _googleSignIn.signIn();
     if (account == null) return null;
     final session = AuthSession(
@@ -64,6 +77,7 @@ class AuthService {
       value: jsonEncode(session.toJson()),
     );
     return session;
+    */
   }
 
   Future<void> signOut() async {
