@@ -1,0 +1,5 @@
+{
+  "emulator.emulatorPath": "~/Android/Sdk/emulator",
+  "emulator.emulatorPathLinux": "~/Android/Sdk/emulator",
+  "emulator.coldBoot": true
+}

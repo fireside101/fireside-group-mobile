@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_typography.dart';
@@ -29,16 +28,28 @@ class SignInScreen extends ConsumerWidget {
                 children: [
                   Center(
                     child: Container(
-                      width: 88,
-                      height: 88,
+                      width: 96,
+                      height: 96,
                       decoration: BoxDecoration(
-                        color: colors.primary,
-                        borderRadius: BorderRadius.circular(24),
-                      ),
-                      child: const Icon(
-                        LucideIcons.flame,
                         color: Colors.white,
-                        size: 44,
+                        borderRadius: BorderRadius.circular(24),
+                        boxShadow: [
+                          BoxShadow(
+                            color: colors.primary.withValues(alpha: 0.12),
+                            blurRadius: 16,
+                            offset: const Offset(0, 8),
+                          ),
+                        ],
+                      ),
+                      padding: const EdgeInsets.all(8),
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(18),
+                        child: Image.asset(
+                          'assets/images/logo-fireside.jpeg',
+                          fit: BoxFit.cover,
+                          width: 80,
+                          height: 80,
+                        ),
                       ),
                     ),
                   ),
@@ -55,10 +66,8 @@ class SignInScreen extends ConsumerWidget {
                     'Your internal applications, in one place. Sign in with your '
                     'Fireside Africa Google Workspace account to continue.',
                     textAlign: TextAlign.center,
-                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                          color: colors.muted,
-                          height: 1.4,
-                        ),
+                    style: Theme.of(context).textTheme.bodyMedium
+                        ?.copyWith(color: colors.muted, height: 1.4),
                   ),
                   const SizedBox(height: 40),
                   if (auth.hasError)
@@ -67,13 +76,14 @@ class SignInScreen extends ConsumerWidget {
                       child: Text(
                         'Sign-in failed. Please try again.',
                         textAlign: TextAlign.center,
-                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                              color: colors.statusBad,
-                            ),
+                        style: Theme.of(context).textTheme.bodyMedium
+                            ?.copyWith(color: colors.statusBad),
                       ),
                     ),
                   _GoogleSignInButton(
-                    onPressed: auth.isLoading ? null : () => _signIn(context, ref),
+                    onPressed: auth.isLoading
+                        ? null
+                        : () => _signIn(context, ref),
                   ),
                   if (auth.isLoading) ...[
                     const SizedBox(height: 20),
@@ -89,9 +99,8 @@ class SignInScreen extends ConsumerWidget {
                   Text(
                     'Access is restricted to fireside.africa accounts.',
                     textAlign: TextAlign.center,
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: colors.muted,
-                        ),
+                    style: Theme.of(context).textTheme.bodySmall
+                        ?.copyWith(color: colors.muted),
                   ),
                 ],
               ),
