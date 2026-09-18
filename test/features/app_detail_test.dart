@@ -1,7 +1,6 @@
 import 'package:fireside_group/core/theme/app_theme.dart';
 import 'package:fireside_group/data/providers.dart';
 import 'package:fireside_group/data/repositories/catalogue_repository.dart';
-import 'package:fireside_group/data/repositories/installed_apps_repository.dart';
 import 'package:fireside_group/data/models/fireside_application.dart';
 import 'package:fireside_group/features/app_detail/app_detail_screen.dart';
 import 'package:flutter/material.dart';
@@ -30,68 +29,47 @@ void main() {
     keywords: ['stock'],
   );
 
-  Widget buildApp(Set<String> installed) {
+  const bi = FiresideApplication(
+    id: 'bi',
+    name: 'Fireside BI Reporting',
+    department: 'Analytics',
+    description: 'Reports',
+    category: 'platform',
+    repository: 'Internal service',
+  );
+
+  Widget buildApp(List<FiresideApplication> apps, String appId) {
     return ProviderScope(
       overrides: [
         catalogueRepositoryProvider
-            .overrideWithValue(const _FakeCatalogueRepository([warehouse])),
-        installedAppsRepositoryProvider.overrideWithValue(
-          _RecordingInstalledAppsRepository(installed),
-        ),
+            .overrideWithValue(_FakeCatalogueRepository(apps)),
       ],
       child: MaterialApp(
         theme: buildTealTheme(),
-        home: const AppDetailScreen(appId: 'warehouse'),
+        home: AppDetailScreen(appId: appId),
       ),
     );
   }
 
-  testWidgets('shows Install by default and disables the Open flow',
-      (tester) async {
+  testWidgets('shows an Open action for an app with a URL', (tester) async {
     SharedPreferences.setMockInitialValues({});
-    await tester.pumpWidget(buildApp({}));
+    await tester.pumpWidget(buildApp([warehouse], 'warehouse'));
     await tester.pumpAndSettle();
 
-    expect(find.text('Install'), findsOneWidget);
+    expect(find.text('Open'), findsOneWidget);
+    expect(find.text('Install'), findsNothing);
     expect(find.text('Already installed'), findsNothing);
-    expect(find.text('Open'), findsNothing);
     expect(find.text('About this app'), findsOneWidget);
   });
 
-  testWidgets('shows Already installed when the app is installed',
+  testWidgets('shows a disabled Internal service action without a URL',
       (tester) async {
     SharedPreferences.setMockInitialValues({});
-    await tester.pumpWidget(buildApp({'warehouse'}));
+    await tester.pumpWidget(buildApp([bi], 'bi'));
     await tester.pumpAndSettle();
 
-    expect(find.text('Already installed'), findsOneWidget);
+    expect(find.text('Internal service'), findsNWidgets(2));
+    expect(find.text('Open'), findsNothing);
     expect(find.text('Install'), findsNothing);
   });
-
-  testWidgets('tapping Install records the app as installed', (tester) async {
-    SharedPreferences.setMockInitialValues({});
-    await tester.pumpWidget(buildApp({}));
-    await tester.pumpAndSettle();
-
-    await tester.tap(find.text('Install'));
-    await tester.pumpAndSettle();
-
-    expect(find.text('Already installed'), findsOneWidget);
-    expect(find.text('Warehouse has been installed.'), findsOneWidget);
-  });
-}
-
-class _RecordingInstalledAppsRepository extends InstalledAppsRepository {
-  _RecordingInstalledAppsRepository(this._installed);
-
-  Set<String> _installed;
-
-  @override
-  Future<Set<String>> read() async => _installed;
-
-  @override
-  Future<Set<String>> install(String appId) async {
-    _installed = {..._installed, appId};
-    return _installed;
-  }
 }

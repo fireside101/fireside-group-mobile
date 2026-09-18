@@ -10,7 +10,8 @@ import '../../core/theme/app_colors.dart';
 ///
 /// Uses the package's `obsidian` graph (the only style with a real
 /// `BackdropFilter`) turned into a deep-blue glass pane: translucent tint,
-/// high blur sigma, and the app's charcoal/accent blue for the icons.
+/// high blur sigma, and no glow. The active tab's icon and label turn white;
+/// inactive icons stay charcoal.
 class AppBottomNav extends StatelessWidget {
   const AppBottomNav({super.key, required this.currentIndex});
 
@@ -39,6 +40,8 @@ class AppBottomNav extends StatelessWidget {
       onItemSelected: (index) => context.go(routes[index]),
       // Zero transition time + the bounce end-state keeps icons fixed in
       // place; only the active color changes (no pop-up / scale).
+      showGlow: false,
+      glowStrength: 0.0,
       animationDuration: Duration.zero,
       iconAnimationType: IconAnimationType.bounce,
       items: [
@@ -49,15 +52,17 @@ class AppBottomNav extends StatelessWidget {
               color: i == currentIndex ? Colors.white : deepBlue,
               size: 24,
             ),
-            label: _tabs[i].$2,
+            customLabel: Text(
+              _tabs[i].$2,
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 10,
+                fontWeight: FontWeight.w700,
+                letterSpacing: 1,
+              ),
+            ),
           ),
       ],
-      textStyle: TextStyle(
-        color: deepBlue,
-        fontSize: 10,
-        fontWeight: FontWeight.w700,
-        letterSpacing: 1,
-      ),
       style: NavBarStyle.obsidian,
       blurSigma: 15.0,
       theme: FuturisticTheme(

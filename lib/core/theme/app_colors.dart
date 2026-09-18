@@ -46,15 +46,15 @@ class AppColors extends ThemeExtension<AppColors> {
   );
 
   static const dark = AppColors(
-    primary: Color(0xFF00BCD8),
-    primaryDark: Color(0xFF0090A8),
+    primary: Color(0xFF2A2560),
+    primaryDark: Color(0xFF211D4F),
     ivory: Color(0xFF0B1220),
     surface: Color(0xFF16202E),
     charcoal: Color(0xFFE6EDF5),
     muted: Color(0xFF9AA7B8),
     border: Color(0xFF233140),
     sand: Color(0xFF2E3B4D),
-    accent: Color(0xFF4FD8EE),
+    accent: Color(0xFF3D3587),
     statusGreen: Color(0xFF46C478),
     statusBad: Color(0xFFFF8A80),
     statusAmber: Color(0xFFFFC24B),

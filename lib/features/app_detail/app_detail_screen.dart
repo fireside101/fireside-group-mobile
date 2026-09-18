@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../../core/theme/app_colors.dart';
@@ -10,9 +11,8 @@ import '../../data/providers.dart';
 import '../app_card/app_card.dart';
 import '../app_card/status_indicator.dart';
 
-/// Play Store style app detail: big icon, name, health + an Install action,
-/// the full description and a details list. Once installed the action becomes
-/// an inactive "Already installed" button.
+/// Play Store style app detail: big icon, name, health + an Open action, the
+/// full description and a details list. "Open" launches the web app.
 class AppDetailScreen extends ConsumerStatefulWidget {
   final String appId;
 
@@ -88,7 +88,7 @@ class _AppDetailScreenState extends ConsumerState<AppDetailScreen> {
             ],
           ),
           const SizedBox(height: 20),
-          _InstallButton(application: app),
+          _OpenButton(application: app),
           const SizedBox(height: 28),
           Text(
             'About this app',
@@ -121,45 +121,32 @@ class _AppDetailScreenState extends ConsumerState<AppDetailScreen> {
   }
 }
 
-class _InstallButton extends ConsumerWidget {
-  const _InstallButton({required this.application});
+class _OpenButton extends StatelessWidget {
+  const _OpenButton({required this.application});
 
   final FiresideApplication application;
 
-  Future<void> _install(BuildContext context, WidgetRef ref) async {
-    await ref.read(installedAppsProvider.notifier).install(application.id);
-    if (context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('${application.name} has been installed.')),
-      );
-    }
-  }
-
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final installed = ref.watch(installedAppsProvider);
-    final isInstalled = installed.value?.contains(application.id) ?? false;
-    final isLoading = installed.isLoading;
+  Widget build(BuildContext context) {
+    final hasUrl = application.url != null;
 
     return SizedBox(
       height: 52,
       width: double.infinity,
-      child: isInstalled
-          ? FilledButton.tonalIcon(
-              onPressed: null,
-              icon: const Icon(LucideIcons.check, size: 20),
+      child: hasUrl
+          ? FilledButton.icon(
+              onPressed: () => context.push('/app/${application.id}/open'),
+              icon: const Icon(LucideIcons.play, size: 20),
               label: const Text(
-                'Already installed',
+                'Open',
                 style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
               ),
             )
-          : FilledButton.icon(
-              onPressed: isLoading
-                  ? null
-                  : () => _install(context, ref),
-              icon: const Icon(LucideIcons.download, size: 20),
+          : FilledButton.tonalIcon(
+              onPressed: null,
+              icon: const Icon(LucideIcons.lock, size: 20),
               label: const Text(
-                'Install',
+                'Internal service',
                 style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
               ),
             ),
@@ -276,7 +263,7 @@ class _KeywordRow extends StatelessWidget {
               child: Text(
                 keyword,
                 style: AppTypography.labelSmall().copyWith(
-                  color: colors.accent,
+                  color: colors.charcoal,
                   fontWeight: FontWeight.w700,
                 ),
               ),

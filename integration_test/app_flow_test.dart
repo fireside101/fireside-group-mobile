@@ -57,7 +57,7 @@ void main() {
     await _settle(tester);
 
     // Home renders the hero search and the launcher.
-    expect(find.text('Welcome back.'), findsOneWidget);
+    expect(find.textContaining('Welcome back'), findsOneWidget);
     expect(find.byType(AppSearchBar), findsOneWidget);
     expect(find.text('Fireside BI Reporting'), findsOneWidget);
 
@@ -75,7 +75,7 @@ void main() {
     await tester.tap(find.text('Fireside BI Reporting'));
     await _settle(tester);
     expect(find.text('About this app'), findsOneWidget);
-    expect(find.text('Internal service'), findsOneWidget);
+    expect(find.text('Internal service'), findsNWidgets(2));
 
     // Go back and confirm the recent strip now lists the app.
     await tester.tap(find.byType(BackButton));

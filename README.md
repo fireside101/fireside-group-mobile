@@ -113,7 +113,7 @@ flutter test integration_test/app_flow_test.dart    # needs a device/emulator
 
 ## Theming
 
-Primary theme is teal/purple (`buildTealTheme`); the teal-accented dark
+Primary theme is teal/purple (`buildTealTheme`); the deep-blue-accented dark
 theme (`buildDarkTheme`) is switchable via
 `themePaletteProvider`. `AppColors` is a `ThemeExtension` holding tokens the
 Material `ColorScheme` has no slot for. App cards use the chamfered top-right
