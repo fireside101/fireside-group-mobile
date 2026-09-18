@@ -18,7 +18,7 @@ ThemeData _buildTheme(AppColors colors) {
   final colorScheme = ColorScheme.fromSeed(
     seedColor: colors.primary,
     primary: colors.primary,
-    onPrimary: colors.ivory,
+    onPrimary: Colors.white,
     secondary: colors.accent,
     onSecondary: Colors.white,
     surface: colors.surface,
@@ -50,6 +50,11 @@ ThemeData _buildTheme(AppColors colors) {
       titleLarge: AppTypography.titleLarge(),
       titleMedium: AppTypography.titleMedium(),
       titleSmall: AppTypography.titleSmall(),
+    ).apply(
+      // Google Fonts ship near-black text colors; retint them so headings and
+      // plain text follow the palette (light in dark mode, indigo in light).
+      bodyColor: colors.charcoal,
+      displayColor: colors.charcoal,
     ),
     elevatedButtonTheme: ElevatedButtonThemeData(
       style: ElevatedButton.styleFrom(
