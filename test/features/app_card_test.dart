@@ -1,21 +1,10 @@
 import 'package:fireside_group/core/theme/app_theme.dart';
 import 'package:fireside_group/data/models/fireside_application.dart';
-import 'package:fireside_group/data/models/health_status.dart';
-import 'package:fireside_group/data/providers.dart';
-import 'package:fireside_group/data/repositories/health_repository.dart';
 import 'package:fireside_group/features/app_card/app_card.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-
-class _FakeHealthRepository implements HealthRepository {
-  const _FakeHealthRepository(this.status);
-
-  final HealthStatus status;
-
-  @override
-  Future<HealthStatus> fetchHealth(String healthUrl) async => status;
-}
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 const _withUrl = FiresideApplication(
   id: 'warehouse',
@@ -37,17 +26,9 @@ const _noUrl = FiresideApplication(
   repository: 'Internal service',
 );
 
-Future<void> _pumpCard(
-  WidgetTester tester,
-  FiresideApplication app, {
-  HealthStatus status = HealthStatus.unknown,
-}) async {
+Future<void> _pumpCard(WidgetTester tester, FiresideApplication app) async {
   await tester.pumpWidget(
     ProviderScope(
-      overrides: [
-        healthRepositoryProvider
-            .overrideWithValue(_FakeHealthRepository(status)),
-      ],
       child: MaterialApp(
         theme: buildTealTheme(),
         home: Scaffold(
@@ -65,32 +46,23 @@ Future<void> _pumpCard(
 }
 
 void main() {
-  testWidgets('shows Available for an available app', (tester) async {
-    await _pumpCard(tester, _withUrl, status: HealthStatus.available);
-    expect(find.text('Available'), findsOneWidget);
-    expect(find.text('Open'), findsOneWidget);
-  });
-
-  testWidgets('shows Unavailable for an unavailable app', (tester) async {
-    await _pumpCard(tester, _withUrl, status: HealthStatus.unavailable);
-    expect(find.text('Unavailable'), findsOneWidget);
-  });
-
-  testWidgets('shows Unknown when status is unknown', (tester) async {
-    await _pumpCard(tester, _withUrl, status: HealthStatus.unknown);
-    expect(find.text('Unknown'), findsOneWidget);
-  });
-
-  testWidgets('renders the Internal service state when url is null',
-      (tester) async {
-    await _pumpCard(tester, _noUrl);
-    expect(find.text('Internal'), findsOneWidget);
-    expect(find.text('Open'), findsNothing);
-  });
-
-  testWidgets('renders name and department', (tester) async {
+  testWidgets('renders name, description and department', (tester) async {
     await _pumpCard(tester, _withUrl);
     expect(find.text('Warehouse'), findsOneWidget);
+    expect(find.text('Track inventory'), findsOneWidget);
     expect(find.text('OPERATIONS'), findsOneWidget);
+  });
+
+  testWidgets('renders an app without a URL', (tester) async {
+    await _pumpCard(tester, _noUrl);
+    expect(find.text('Fireside BI Reporting'), findsOneWidget);
+    expect(find.text('Reports'), findsOneWidget);
+    expect(find.text('ANALYTICS'), findsOneWidget);
+  });
+
+  testWidgets('shows a chevron and has no status indicator', (tester) async {
+    await _pumpCard(tester, _withUrl);
+    expect(find.byIcon(LucideIcons.chevronRight), findsOneWidget);
+    expect(find.text('Unknown'), findsNothing);
   });
 }

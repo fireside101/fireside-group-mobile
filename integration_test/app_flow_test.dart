@@ -7,7 +7,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:integration_test/integration_test.dart';
-import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 /// Simulates a signed-in Workspace user so the auth gate passes without
 /// hitting Google's platform flow.
@@ -31,6 +30,14 @@ class _FakeAuthService extends AuthService {
   Future<void> signOut() async {}
 }
 
+Future<void> _settle(WidgetTester tester) async {
+  // The FuturisticNavBar runs continuous animations, so pumpAndSettle would
+  // never finish. Pump a fixed window instead to let transitions complete.
+  for (var i = 0; i < 12; i++) {
+    await tester.pump(const Duration(milliseconds: 100));
+  }
+}
+
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
@@ -47,7 +54,7 @@ void main() {
         child: const FiresideGroupApp(),
       ),
     );
-    await tester.pumpAndSettle();
+    await _settle(tester);
 
     // Home renders the hero search and the launcher.
     expect(find.text('Welcome back.'), findsOneWidget);
@@ -56,22 +63,23 @@ void main() {
 
     // Search filters the launcher down to the matching card.
     await tester.enterText(find.byType(TextField).first, 'warehouse');
-    await tester.pumpAndSettle();
+    await _settle(tester);
     expect(find.text('Warehouse'), findsOneWidget);
     expect(find.text('Fireside BI Reporting'), findsNothing);
 
     // Clear the search so the BI card is visible again.
     await tester.enterText(find.byType(TextField).first, '');
-    await tester.pumpAndSettle();
+    await _settle(tester);
 
-    // Open the no-URL app and confirm the Internal service state.
+    // Open the no-URL app's detail screen and confirm the Internal service state.
     await tester.tap(find.text('Fireside BI Reporting'));
-    await tester.pumpAndSettle();
+    await _settle(tester);
+    expect(find.text('About this app'), findsOneWidget);
     expect(find.text('Internal service'), findsOneWidget);
 
-    // Close and confirm the recent strip now lists the app.
-    await tester.tap(find.byIcon(LucideIcons.x).first);
-    await tester.pumpAndSettle();
+    // Go back and confirm the recent strip now lists the app.
+    await tester.tap(find.byType(BackButton));
+    await _settle(tester);
     expect(find.text('Recent'), findsOneWidget);
   });
 }

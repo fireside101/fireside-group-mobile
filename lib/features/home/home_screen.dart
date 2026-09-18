@@ -4,7 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/theme/app_colors.dart';
 import '../../data/application_search.dart';
 import '../../data/providers.dart';
-import '../shell/app_footer.dart';
+import '../shell/app_bottom_nav.dart';
 import '../shell/app_header.dart';
 import 'widgets/hero_section.dart';
 import 'widgets/launcher_shell.dart';
@@ -82,7 +82,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                         error: (_, _) => const SizedBox.shrink(),
                       ),
                     const SupportSection(),
-                    const AppFooter(),
                   ],
                 ),
               ),
@@ -90,6 +89,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           ),
         ],
       ),
+      bottomNavigationBar: const AppBottomNav(currentIndex: 0),
     );
   }
 }

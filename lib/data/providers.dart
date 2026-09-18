@@ -4,6 +4,7 @@ import 'models/fireside_application.dart';
 import 'models/health_status.dart';
 import 'repositories/catalogue_repository.dart';
 import 'repositories/health_repository.dart';
+import 'repositories/installed_apps_repository.dart';
 import 'repositories/local_catalogue_repository.dart';
 import 'repositories/recent_apps_repository.dart';
 
@@ -91,5 +92,29 @@ class RecentAppsNotifier
     state = AsyncValue.data(
       ids.map((id) => byId[id]).whereType<FiresideApplication>().toList(),
     );
+  }
+}
+
+final installedAppsRepositoryProvider =
+    Provider<InstalledAppsRepository>((ref) => const InstalledAppsRepository());
+
+final installedAppsProvider =
+    StateNotifierProvider<InstalledAppsNotifier, AsyncValue<Set<String>>>(
+  (ref) => InstalledAppsNotifier(ref.watch(installedAppsRepositoryProvider)),
+);
+
+class InstalledAppsNotifier extends StateNotifier<AsyncValue<Set<String>>> {
+  InstalledAppsNotifier(this._repository) : super(const AsyncValue.loading()) {
+    _load();
+  }
+
+  final InstalledAppsRepository _repository;
+
+  Future<void> _load() async {
+    state = AsyncValue.data(await _repository.read());
+  }
+
+  Future<void> install(String appId) async {
+    state = AsyncValue.data(await _repository.install(appId));
   }
 }

@@ -1,10 +1,14 @@
+import 'dart:math';
+
 import 'package:flutter/material.dart';
 
 import '../../../data/models/fireside_application.dart';
 import '../../app_card/app_card.dart';
 
-/// Single-column chamfered card grid (mobile-first). Tall cards span wide on
-/// desktop; on a phone everything stays one column.
+/// Single-column Play Store style app rows (mobile-first). Rows spread two
+/// across on desktop; on a phone everything stays one column. Rows are laid
+/// out with a [Column] of [Row]s so each tile sizes to its own content instead
+/// of a fixed grid height (which used to overflow).
 class LauncherShell extends StatelessWidget {
   final List<FiresideApplication> applications;
 
@@ -27,39 +31,46 @@ class LauncherShell extends StatelessWidget {
     return LayoutBuilder(
       builder: (context, constraints) {
         final columns = constraints.maxWidth >= 900 ? 2 : 1;
-        return GridView.builder(
-          shrinkWrap: true,
-          physics: const NeverScrollableScrollPhysics(),
-          padding: const EdgeInsets.fromLTRB(20, 4, 20, 8),
-          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount: columns,
-            crossAxisSpacing: 16,
-            mainAxisSpacing: 16,
-            childAspectRatio: _aspectRatioFor(context, constraints.maxWidth),
-          ),
-          itemCount: applications.length,
-          itemBuilder: (context, index) {
-            final app = applications[index];
-            return Padding(
-              padding: app.isTall
-                  ? EdgeInsets.zero
-                  : const EdgeInsets.only(bottom: 0),
-              child: AppCard(
-                application: app,
-                size: app.isTall
-                    ? AppCardSize.tall
-                    : AppCardSize.standard,
+        const spacing = 16.0;
+        final colWidth =
+            (constraints.maxWidth - 40 - spacing * (columns - 1)) / columns;
+
+        final rows = <Widget>[];
+        for (var i = 0; i < applications.length; i += columns) {
+          final rowApps = applications.sublist(
+            i,
+            min(i + columns, applications.length),
+          );
+          rows.add(
+            Padding(
+              padding: EdgeInsets.only(
+                bottom: i + columns >= applications.length ? 0 : 12,
               ),
-            );
-          },
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  for (var j = 0; j < rowApps.length; j++) ...[
+                    SizedBox(
+                      width: colWidth,
+                      child: AppCard(application: rowApps[j]),
+                    ),
+                    if (j < rowApps.length - 1) const SizedBox(width: spacing),
+                  ],
+                  if (rowApps.length < columns) const Spacer(),
+                ],
+              ),
+            ),
+          );
+        }
+
+        return Padding(
+          padding: const EdgeInsets.fromLTRB(20, 4, 20, 8),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: rows,
+          ),
         );
       },
     );
-  }
-
-  double _aspectRatioFor(BuildContext context, double width) {
-    // Fixed card heights keyed to size variant; keep vertical rhythm stable.
-    if (width >= 900) return 1.9;
-    return 1.45;
   }
 }
