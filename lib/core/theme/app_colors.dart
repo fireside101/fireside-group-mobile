@@ -45,19 +45,19 @@ class AppColors extends ThemeExtension<AppColors> {
     statusAmber: Color(0xFFA15C07),
   );
 
-  static const red = AppColors(
-    primary: Color(0xFFA70F1B),
-    primaryDark: Color(0xFF861019),
-    ivory: Color(0xFFFAF8F4),
-    surface: Color(0xFFFFFEFC),
-    charcoal: Color(0xFF252327),
-    muted: Color(0xFF6C6871),
-    border: Color(0xFFD9CFC1),
-    sand: Color(0xFFDCC8A7),
-    accent: Color(0xFFA70F1B),
-    statusGreen: Color(0xFF237A3B),
-    statusBad: Color(0xFFB42318),
-    statusAmber: Color(0xFFA15C07),
+  static const dark = AppColors(
+    primary: Color(0xFF00BCD8),
+    primaryDark: Color(0xFF0090A8),
+    ivory: Color(0xFF0B1220),
+    surface: Color(0xFF16202E),
+    charcoal: Color(0xFFE6EDF5),
+    muted: Color(0xFF9AA7B8),
+    border: Color(0xFF233140),
+    sand: Color(0xFF2E3B4D),
+    accent: Color(0xFF4FD8EE),
+    statusGreen: Color(0xFF46C478),
+    statusBad: Color(0xFFFF8A80),
+    statusAmber: Color(0xFFFFC24B),
   );
 
   @override

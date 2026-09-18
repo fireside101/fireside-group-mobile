@@ -25,7 +25,7 @@ class RecentAppsStrip extends StatelessWidget {
           ),
         ),
         SizedBox(
-          height: 148,
+          height: 104,
           child: ListView.separated(
             scrollDirection: Axis.horizontal,
             padding: const EdgeInsets.symmetric(horizontal: 20),
@@ -33,10 +33,9 @@ class RecentAppsStrip extends StatelessWidget {
             separatorBuilder: (_, _) => const SizedBox(width: 12),
             itemBuilder: (context, index) {
               return SizedBox(
-                width: 200,
+                width: 260,
                 child: AppCard(
                   application: applications[index],
-                  size: AppCardSize.compact,
                 ),
               );
             },

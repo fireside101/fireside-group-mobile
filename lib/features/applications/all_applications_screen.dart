@@ -6,7 +6,7 @@ import '../../data/application_search.dart';
 import '../../data/providers.dart';
 import '../app_card/app_card.dart';
 import '../home/widgets/search_bar.dart';
-import '../shell/app_footer.dart';
+import '../shell/app_bottom_nav.dart';
 import '../shell/app_header.dart';
 
 class AllApplicationsScreen extends ConsumerStatefulWidget {
@@ -85,7 +85,6 @@ class _AllApplicationsScreenState extends ConsumerState<AllApplicationsScreen> {
                         padding: const EdgeInsets.fromLTRB(20, 6, 20, 6),
                         child: AppCard(
                           application: app,
-                          size: AppCardSize.compact,
                         ),
                       ),
                     ),
@@ -96,13 +95,13 @@ class _AllApplicationsScreenState extends ConsumerState<AllApplicationsScreen> {
                       child: Center(child: Text('No applications match your search.')),
                     ),
                   const SizedBox(height: 24),
-                  const AppFooter(),
                 ],
               ),
             ),
           ),
         ],
       ),
+      bottomNavigationBar: const AppBottomNav(currentIndex: 0),
     );
   }
 }

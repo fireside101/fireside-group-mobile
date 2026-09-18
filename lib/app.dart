@@ -4,11 +4,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'core/router/app_router.dart';
 import 'core/theme/app_theme.dart';
 
-enum AppThemePalette { teal, red }
-
-final themePaletteProvider =
-    StateProvider<AppThemePalette>((ref) => AppThemePalette.teal);
-
 class FiresideGroupApp extends ConsumerWidget {
   const FiresideGroupApp({super.key});
 
@@ -21,7 +16,7 @@ class FiresideGroupApp extends ConsumerWidget {
       title: 'Fireside Group',
       debugShowCheckedModeBanner: false,
       theme: buildTealTheme(),
-      darkTheme: buildRedTheme(),
+      darkTheme: buildDarkTheme(),
       themeMode: palette == AppThemePalette.teal
           ? ThemeMode.light
           : ThemeMode.dark,

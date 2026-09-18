@@ -1,12 +1,18 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import 'app_colors.dart';
 import 'app_typography.dart';
 
+enum AppThemePalette { teal, dark }
+
+final themePaletteProvider =
+    StateProvider<AppThemePalette>((ref) => AppThemePalette.teal);
+
 ThemeData buildTealTheme() => _buildTheme(AppColors.teal);
 
-ThemeData buildRedTheme() => _buildTheme(AppColors.red);
+ThemeData buildDarkTheme() => _buildTheme(AppColors.dark);
 
 ThemeData _buildTheme(AppColors colors) {
   final colorScheme = ColorScheme.fromSeed(

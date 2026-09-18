@@ -1,13 +1,15 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_typography.dart';
+import '../../auth/auth_controller.dart';
 import '../widgets/search_bar.dart';
 
 /// Gradient + flame-mark stand-in for the hero background image. Drop
 /// `assets/images/hero_placeholder.jpg` into this `Stack` when ready.
-class HeroSection extends StatelessWidget {
+class HeroSection extends ConsumerWidget {
   final TextEditingController searchController;
   final ValueChanged<String> onSearchChanged;
 
@@ -18,8 +20,14 @@ class HeroSection extends StatelessWidget {
   });
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final colors = context.appColors;
+    final name = ref.watch(authControllerProvider).value?.name;
+    final firstName = name?.split(' ').first;
+    final greeting =
+        firstName == null || firstName.isEmpty
+            ? 'Welcome back.'
+            : 'Welcome back, $firstName.';
     return Container(
       padding: const EdgeInsets.fromLTRB(20, 32, 20, 32),
       decoration: BoxDecoration(
@@ -33,7 +41,7 @@ class HeroSection extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            'Welcome back.',
+            greeting,
             style: AppTypography.displayMedium().copyWith(
               color: Colors.white,
             ),
