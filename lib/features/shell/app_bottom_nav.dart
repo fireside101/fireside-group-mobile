@@ -13,10 +13,17 @@ import '../../core/theme/app_colors.dart';
 /// high blur sigma, and no glow. The active tab's icon and label turn white;
 /// inactive icons stay charcoal.
 class AppBottomNav extends StatelessWidget {
-  const AppBottomNav({super.key, required this.currentIndex});
+  const AppBottomNav({
+    super.key,
+    required this.currentIndex,
+    this.enableAnimations = true,
+  });
 
   /// Index of the currently active destination.
   final int currentIndex;
+
+  /// Allows detail screens to keep the nav visible without a background ticker.
+  final bool enableAnimations;
 
   static const List<String> routes = ['/', '/support', '/settings', '/profile'];
 
@@ -33,57 +40,60 @@ class AppBottomNav extends StatelessWidget {
     final deepBlue = colors.charcoal;
     final deepBlueAccent = colors.accent;
 
-    return SafeArea(
-      top: false,
-      child: FuturisticNavBar(
-      selectedIndex: currentIndex,
-      onItemSelected: (index) => context.go(routes[index]),
-      // Zero transition time + the bounce end-state keeps icons fixed in
-      // place; only the active color changes (no pop-up / scale).
-      showGlow: false,
-      glowStrength: 0.0,
-      animationDuration: Duration.zero,
-      iconAnimationType: IconAnimationType.bounce,
-      items: [
-        for (var i = 0; i < _tabs.length; i++)
-          NavBarItem(
-            customIcon: Icon(
-              _tabs[i].$1,
-              color: i == currentIndex ? Colors.white : deepBlue,
-              size: 24,
-            ),
-            customLabel: Text(
-              _tabs[i].$2,
-              style: TextStyle(
-                color: Colors.white,
-                fontSize: 10,
-                fontWeight: FontWeight.w700,
-                letterSpacing: 1,
+    return TickerMode(
+      enabled: enableAnimations,
+      child: SafeArea(
+        top: false,
+        child: FuturisticNavBar(
+          selectedIndex: currentIndex,
+          onItemSelected: (index) => context.go(routes[index]),
+          // Zero transition time + the bounce end-state keeps icons fixed in
+          // place; only the active color changes (no pop-up / scale).
+          showGlow: false,
+          glowStrength: 0.0,
+          animationDuration: Duration.zero,
+          iconAnimationType: IconAnimationType.bounce,
+          items: [
+            for (var i = 0; i < _tabs.length; i++)
+              NavBarItem(
+                customIcon: Icon(
+                  _tabs[i].$1,
+                  color: i == currentIndex ? Colors.white : deepBlue,
+                  size: 24,
+                ),
+                customLabel: Text(
+                  _tabs[i].$2,
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 10,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 1,
+                  ),
+                ),
               ),
+          ],
+          style: NavBarStyle.obsidian,
+          blurSigma: 15.0,
+          theme: FuturisticTheme(
+            name: 'Fireside Glass',
+            accentColor: colors.primary,
+            baseColor: deepBlue,
+            backgroundColor: deepBlueAccent,
+            glowGradient: LinearGradient(
+              colors: [colors.primaryDark, deepBlueAccent],
             ),
+            particleColor: colors.primary,
+            customColors: {
+              'baseColor': deepBlue.withValues(alpha: 0.22),
+              'baseAccentColor': deepBlueAccent.withValues(alpha: 0.16),
+              'glowColor': colors.primary,
+              'podShadowColor': deepBlue.withValues(alpha: 0.5),
+              'podBorderColor': Colors.white.withValues(alpha: 0.18),
+              'accentColor': colors.primary,
+            },
           ),
-      ],
-      style: NavBarStyle.obsidian,
-      blurSigma: 15.0,
-      theme: FuturisticTheme(
-        name: 'Fireside Glass',
-        accentColor: colors.primary,
-        baseColor: deepBlue,
-        backgroundColor: deepBlueAccent,
-        glowGradient: LinearGradient(
-          colors: [colors.primaryDark, deepBlueAccent],
         ),
-        particleColor: colors.primary,
-        customColors: {
-          'baseColor': deepBlue.withValues(alpha: 0.22),
-          'baseAccentColor': deepBlueAccent.withValues(alpha: 0.16),
-          'glowColor': colors.primary,
-          'podShadowColor': deepBlue.withValues(alpha: 0.5),
-          'podBorderColor': Colors.white.withValues(alpha: 0.18),
-          'accentColor': colors.primary,
-        },
       ),
-    ),
-  );
-}
+    );
+  }
 }

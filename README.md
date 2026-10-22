@@ -38,6 +38,27 @@ dart run build_runner build --delete-conflicting-outputs
 flutter run
 ```
 
+### Supabase authentication setup
+
+The mobile login uses the same Supabase email/password authentication as the
+web portal. Supply the public project URL and publishable/anonymous key at
+build or run time; do not commit them to source:
+
+```bash
+flutter run \
+  --dart-define=SUPABASE_URL=https://supabase.firesideafrica.cloud \
+  --dart-define=SUPABASE_ANON_KEY=your-public-anon-or-publishable-key \
+  --dart-define=PORTAL_API_BASE_URL=https://firesidegroup.firesideafrica.cloud
+```
+
+Without these defines, the app starts in a safe unconfigured state and the
+login card explains how to configure sign-in. The mobile app does not contain
+or require a service-role key.
+
+Profile details and profile pictures are synchronized through the web portal's
+authenticated `/api/profile` endpoints. Deploy the web portal API changes
+before testing profile edits from mobile.
+
 ### Google Sign-In platform setup
 
 Required before auth works; this cannot be committed:
@@ -46,8 +67,8 @@ Required before auth works; this cannot be committed:
   Console OAuth client config.
 - **iOS:** add the reversed client ID URL scheme to `ios/Runner/Info.plist`.
 
-The Workspace domain is configured in `lib/data/services/auth_service.dart`
-(`hostedDomain: 'fireside.africa'`).
+Google OAuth is currently disabled in the web portal. It can be added as a
+later Supabase OAuth/deep-link increment after the provider is enabled.
 
 ## Architecture
 
@@ -64,7 +85,7 @@ lib/
     application_search.dart      pure search matcher (unit-tested)
     models/                      FiresideApplication (freezed), HealthStatus
     repositories/                catalogue / health / recent-apps
-    services/                    auth_service (google_sign_in + secure session)
+    services/                    auth_service (Supabase session + auth)
     providers.dart               Riverpod providers
   features/
     auth/                        SignInScreen, AuthController

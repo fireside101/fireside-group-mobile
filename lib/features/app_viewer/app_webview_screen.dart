@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
 import '../../core/theme/app_colors.dart';
@@ -35,9 +36,7 @@ class _AppWebViewScreenState extends ConsumerState<AppWebViewScreen> {
   Widget build(BuildContext context) {
     final colors = context.appColors;
     final catalogue = ref.watch(catalogueProvider);
-    final app = catalogue.value
-        ?.where((a) => a.id == widget.appId)
-        .firstOrNull;
+    final app = catalogue.value?.where((a) => a.id == widget.appId).firstOrNull;
 
     if (app == null) {
       return Scaffold(
@@ -60,7 +59,7 @@ class _AppWebViewScreenState extends ConsumerState<AppWebViewScreen> {
 
     if (_controller == null) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        _buildController(app.url!);
+        _buildController(app);
       });
     }
 
@@ -91,9 +90,8 @@ class _AppWebViewScreenState extends ConsumerState<AppWebViewScreen> {
                 children: [
                   Text(
                     app.name,
-                    style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                          fontWeight: FontWeight.w700,
-                        ),
+                    style: Theme.of(context).textTheme.bodyLarge
+                        ?.copyWith(fontWeight: FontWeight.w700),
                     overflow: TextOverflow.ellipsis,
                   ),
                   StatusIndicator(
@@ -111,16 +109,20 @@ class _AppWebViewScreenState extends ConsumerState<AppWebViewScreen> {
           _controller != null
               ? WebViewWidget(controller: _controller!)
               : const SizedBox.shrink(),
-          if (_isLoading)
-            const Center(
-              child: CircularProgressIndicator(),
-            ),
+          if (_isLoading) const Center(child: CircularProgressIndicator()),
         ],
       ),
     );
   }
 
-  void _buildController(String url) {
+  Future<void> _buildController(FiresideApplication app) async {
+    final usesMobileGateway = app.id == 'scorecard' || app.id == 'warehouse';
+    final accessToken = usesMobileGateway
+        ? Supabase.instance.client.auth.currentSession?.accessToken
+        : null;
+    final headers = accessToken == null
+        ? const <String, String>{}
+        : {'Authorization': 'Bearer $accessToken'};
     final controller = WebViewController()
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
       ..setBackgroundColor(context.appColors.ivory)
@@ -136,7 +138,12 @@ class _AppWebViewScreenState extends ConsumerState<AppWebViewScreen> {
           },
         ),
       )
-      ..loadRequest(Uri.parse(url));
+      ..loadRequest(
+        Uri.parse(
+          usesMobileGateway ? '${app.url}/auth/fireside/mobile' : app.url!,
+        ),
+        headers: headers,
+      );
     _controller = controller;
     if (mounted) setState(() {});
   }
@@ -173,8 +180,7 @@ class _InternalServiceView extends StatelessWidget {
                   color: colors.sand.withValues(alpha: 0.3),
                   borderRadius: BorderRadius.circular(20),
                 ),
-                child: Icon(LucideIcons.server,
-                    color: colors.accent, size: 34),
+                child: Icon(LucideIcons.server, color: colors.accent, size: 34),
               ),
               const SizedBox(height: 20),
               Text(
@@ -188,16 +194,16 @@ class _InternalServiceView extends StatelessWidget {
                 '${app.name} is an internal service with no public URL. '
                 'Open it over the office network or contact IT.',
                 textAlign: TextAlign.center,
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      color: colors.muted,
-                      height: 1.4,
-                    ),
+                style: Theme.of(context).textTheme.bodyMedium
+                    ?.copyWith(color: colors.muted, height: 1.4),
               ),
               if (app.repository != null) ...[
                 const SizedBox(height: 20),
                 Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 10,
+                  ),
                   decoration: BoxDecoration(
                     color: colors.surface,
                     borderRadius: BorderRadius.circular(999),
@@ -206,9 +212,9 @@ class _InternalServiceView extends StatelessWidget {
                   child: Text(
                     app.repository!,
                     style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          fontWeight: FontWeight.w700,
-                          color: colors.charcoal,
-                        ),
+                      fontWeight: FontWeight.w700,
+                      color: colors.charcoal,
+                    ),
                   ),
                 ),
               ],

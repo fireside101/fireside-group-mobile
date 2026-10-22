@@ -4,191 +4,274 @@ import 'package:go_router/go_router.dart';
 
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_typography.dart';
+import '../shell/app_header.dart';
 import 'auth_controller.dart';
 
-class SignInScreen extends ConsumerWidget {
+/// Supabase email/password sign-in matching the web portal's login card.
+class SignInScreen extends ConsumerStatefulWidget {
   const SignInScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<SignInScreen> createState() => _SignInScreenState();
+}
+
+class _SignInScreenState extends ConsumerState<SignInScreen> {
+  final _formKey = GlobalKey<FormState>();
+  final _emailController = TextEditingController();
+  final _passwordController = TextEditingController();
+  String? _message;
+  bool _messageIsError = true;
+
+  @override
+  void dispose() {
+    _emailController.dispose();
+    _passwordController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final colors = context.appColors;
     final auth = ref.watch(authControllerProvider);
+    final busy = auth.isLoading;
 
     return Scaffold(
       backgroundColor: colors.ivory,
-      body: SafeArea(
-        child: Center(
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 40),
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 420),
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Center(
-                    child: Container(
-                      width: 96,
-                      height: 96,
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(24),
-                        boxShadow: [
-                          BoxShadow(
-                            color: colors.primary.withValues(alpha: 0.12),
-                            blurRadius: 16,
-                            offset: const Offset(0, 8),
-                          ),
-                        ],
-                      ),
-                      padding: const EdgeInsets.all(8),
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(18),
-                        child: Image.asset(
-                          'assets/images/logo-fireside.jpeg',
-                          fit: BoxFit.cover,
-                          width: 80,
-                          height: 80,
-                        ),
-                      ),
-                    ),
+      body: Column(
+        children: [
+          const AppHeader(),
+          Expanded(
+            child: Center(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 18,
+                  vertical: 56,
+                ),
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 420),
+                  child: _LoginCard(
+                    formKey: _formKey,
+                    emailController: _emailController,
+                    passwordController: _passwordController,
+                    busy: busy,
+                    message: _message,
+                    messageIsError: _messageIsError,
+                    onSubmit: _submit,
+                    onResetPassword: _resetPassword,
                   ),
-                  const SizedBox(height: 28),
-                  Text(
-                    'Fireside Group',
-                    textAlign: TextAlign.center,
-                    style: AppTypography.displayMedium().copyWith(
-                      color: colors.charcoal,
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-                  Text(
-                    'Your internal applications, in one place. Sign in with your '
-                    'Fireside Africa Google Workspace account to continue.',
-                    textAlign: TextAlign.center,
-                    style: Theme.of(context).textTheme.bodyMedium
-                        ?.copyWith(color: colors.muted, height: 1.4),
-                  ),
-                  const SizedBox(height: 40),
-                  if (auth.hasError)
-                    Padding(
-                      padding: const EdgeInsets.only(bottom: 16),
-                      child: Text(
-                        'Sign-in failed. Please try again.',
-                        textAlign: TextAlign.center,
-                        style: Theme.of(context).textTheme.bodyMedium
-                            ?.copyWith(color: colors.statusBad),
-                      ),
-                    ),
-                  _GoogleSignInButton(
-                    onPressed: auth.isLoading
-                        ? null
-                        : () => _signIn(context, ref),
-                  ),
-                  if (auth.isLoading) ...[
-                    const SizedBox(height: 20),
-                    const Center(
-                      child: SizedBox(
-                        width: 20,
-                        height: 20,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      ),
-                    ),
-                  ],
-                  const SizedBox(height: 28),
-                  Text(
-                    'Access is restricted to fireside.africa accounts.',
-                    textAlign: TextAlign.center,
-                    style: Theme.of(context).textTheme.bodySmall
-                        ?.copyWith(color: colors.muted),
-                  ),
-                ],
+                ),
               ),
             ),
           ),
-        ),
+        ],
       ),
     );
   }
 
-  Future<void> _signIn(BuildContext context, WidgetRef ref) async {
-    final success = await ref.read(authControllerProvider.notifier).signIn();
-    if (!context.mounted) return;
+  Future<void> _submit() async {
+    if (!_formKey.currentState!.validate()) return;
+    FocusManager.instance.primaryFocus?.unfocus();
+    setState(() => _message = null);
+
+    final success = await ref
+        .read(authControllerProvider.notifier)
+        .signIn(_emailController.text, _passwordController.text);
+    if (!mounted) return;
     if (success) {
       context.go('/');
+      return;
     }
+
+    final error = ref.read(authControllerProvider).error;
+    setState(() {
+      _message = _friendlyError(error);
+      _messageIsError = true;
+    });
+  }
+
+  Future<void> _resetPassword() async {
+    final email = _emailController.text.trim();
+    if (email.isEmpty || !email.contains('@')) {
+      setState(() {
+        _message = 'Enter your work email first to reset your password.';
+        _messageIsError = true;
+      });
+      return;
+    }
+
+    final sent = await ref
+        .read(authControllerProvider.notifier)
+        .sendPasswordReset(email);
+    if (!mounted) return;
+    setState(() {
+      _message = sent
+          ? 'If that account exists, a password reset email has been sent.'
+          : 'We could not send a reset email. Please try again.';
+      _messageIsError = !sent;
+    });
+  }
+
+  String _friendlyError(Object? error) {
+    if (error is StateError) return error.message;
+    final text = error?.toString() ?? '';
+    if (text.contains('Invalid login credentials')) {
+      return 'Email or password is incorrect.';
+    }
+    return text.isEmpty ? 'Sign-in failed. Please try again.' : text;
   }
 }
 
-class _GoogleSignInButton extends StatelessWidget {
-  final VoidCallback? onPressed;
+class _LoginCard extends StatelessWidget {
+  const _LoginCard({
+    required this.formKey,
+    required this.emailController,
+    required this.passwordController,
+    required this.busy,
+    required this.onSubmit,
+    required this.onResetPassword,
+    this.message,
+    required this.messageIsError,
+  });
 
-  const _GoogleSignInButton({this.onPressed});
+  final GlobalKey<FormState> formKey;
+  final TextEditingController emailController;
+  final TextEditingController passwordController;
+  final bool busy;
+  final String? message;
+  final bool messageIsError;
+  final VoidCallback onSubmit;
+  final VoidCallback onResetPassword;
 
   @override
   Widget build(BuildContext context) {
-    // Follows Google's brand button spec: white surface, G logo, full width.
-    return Material(
-      color: Colors.white,
-      elevation: 1,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-      child: InkWell(
-        onTap: onPressed,
-        borderRadius: BorderRadius.circular(24),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              const _GoogleLogo(),
-              const SizedBox(width: 14),
-              Text(
-                'Sign in with Google',
-                style: AppTypography.bodyLarge().copyWith(
-                  color: const Color(0xFF1F1F1F),
-                  fontWeight: FontWeight.w700,
+    final colors = context.appColors;
+    return Container(
+      padding: const EdgeInsets.all(28),
+      decoration: BoxDecoration(
+        color: colors.surface,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: colors.border),
+        boxShadow: [
+          BoxShadow(
+            color: colors.charcoal.withValues(alpha: 0.1),
+            blurRadius: 48,
+            offset: const Offset(0, 18),
+          ),
+        ],
+      ),
+      child: Form(
+        key: formKey,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'FIRESIDE GROUP ACCOUNT',
+              style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                color: colors.primary,
+                fontWeight: FontWeight.w800,
+                letterSpacing: 1.4,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Sign in to launch applications',
+              style: AppTypography.displayMedium().copyWith(
+                color: colors.charcoal,
+                fontSize: 30,
+                height: 1.1,
+              ),
+            ),
+            const SizedBox(height: 10),
+            Text(
+              'Use your Fireside Group credentials. Unauthenticated apps launch only after signing in.',
+              style: Theme.of(context).textTheme.bodyMedium
+                  ?.copyWith(color: colors.muted, height: 1.45),
+            ),
+            if (message != null) ...[
+              const SizedBox(height: 18),
+              _MessageBanner(text: message!, isError: messageIsError),
+            ],
+            const SizedBox(height: 20),
+            TextFormField(
+              controller: emailController,
+              enabled: !busy,
+              keyboardType: TextInputType.emailAddress,
+              textInputAction: TextInputAction.next,
+              autofillHints: const [
+                AutofillHints.username,
+                AutofillHints.email,
+              ],
+              decoration: const InputDecoration(labelText: 'Email'),
+              validator: (value) {
+                if (value == null || value.trim().isEmpty) {
+                  return 'Enter your email.';
+                }
+                if (!value.contains('@')) return 'Enter a valid email.';
+                return null;
+              },
+            ),
+            const SizedBox(height: 15),
+            TextFormField(
+              controller: passwordController,
+              enabled: !busy,
+              obscureText: true,
+              textInputAction: TextInputAction.done,
+              autofillHints: const [AutofillHints.password],
+              onFieldSubmitted: (_) => onSubmit(),
+              decoration: const InputDecoration(labelText: 'Password'),
+              validator: (value) => value == null || value.isEmpty
+                  ? 'Enter your password.'
+                  : null,
+            ),
+            const SizedBox(height: 6),
+            Align(
+              alignment: Alignment.centerRight,
+              child: TextButton(
+                onPressed: busy ? null : onResetPassword,
+                child: const Text('Register / reset password'),
+              ),
+            ),
+            const SizedBox(height: 4),
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton(
+                onPressed: busy ? null : onSubmit,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 5),
+                  child: Text(busy ? 'Signing in…' : 'Sign In'),
                 ),
               ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );
   }
 }
 
-class _GoogleLogo extends StatelessWidget {
-  const _GoogleLogo();
+class _MessageBanner extends StatelessWidget {
+  const _MessageBanner({required this.text, required this.isError});
+
+  final String text;
+  final bool isError;
 
   @override
   Widget build(BuildContext context) {
-    // Four-color Google "G", painted at runtime so no binary asset is needed.
-    // Swap for the official google-logo.png if brand review requires it.
-    return SizedBox(
-      width: 22,
-      height: 22,
+    final colors = context.appColors;
+    final color = isError ? colors.statusBad : colors.statusGreen;
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 11),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.08),
+        border: Border.all(color: color.withValues(alpha: 0.35)),
+        borderRadius: BorderRadius.circular(10),
+      ),
       child: Text(
-        'G',
-        textAlign: TextAlign.center,
-        style: TextStyle(
-          fontSize: 24,
-          height: 0.9,
-          fontWeight: FontWeight.w800,
-          fontFamily: 'sans-serif',
-          foreground: Paint()..shader = _googleShader,
-        ),
+        text,
+        style: Theme.of(context).textTheme.bodySmall
+            ?.copyWith(color: color, height: 1.35),
       ),
     );
   }
 }
-
-final _googleShader = LinearGradient(
-  colors: const [
-    Color(0xFF4285F4),
-    Color(0xFF34A853),
-    Color(0xFFFBBC05),
-    Color(0xFFEA4335),
-  ],
-  begin: Alignment.topLeft,
-  end: Alignment.bottomRight,
-).createShader(const Rect.fromLTWH(0, 0, 22, 22));

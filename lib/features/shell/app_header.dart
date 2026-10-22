@@ -1,16 +1,49 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_typography.dart';
+import '../../data/providers.dart';
+import '../auth/auth_controller.dart';
 
 /// Sticky top bar with the brand mark and home link.
-class AppHeader extends StatelessWidget {
+class AppHeader extends ConsumerStatefulWidget {
   const AppHeader({super.key});
+
+  @override
+  ConsumerState<AppHeader> createState() => _AppHeaderState();
+}
+
+class _AppHeaderState extends ConsumerState<AppHeader> {
+  String _avatarUrl = '';
+
+  @override
+  void initState() {
+    super.initState();
+    _loadAvatar();
+  }
+
+  Future<void> _loadAvatar() async {
+    if (ref.read(authControllerProvider).value == null) return;
+    try {
+      final response = await ref.read(profileServiceProvider).fetchProfile();
+      if (!mounted || response.avatarUrl.isEmpty) return;
+      setState(() => _avatarUrl = response.avatarUrl);
+    } catch (_) {
+      // Keep the initials fallback when the profile API is unavailable.
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     final colors = context.appColors;
+    final session = ref.watch(authControllerProvider).value;
+    final name = session?.name.trim().isNotEmpty == true
+        ? session!.name.trim()
+        : 'Fireside user';
+    final initial = name.characters.first.toUpperCase();
+    final photoUrl = _avatarUrl.isNotEmpty ? _avatarUrl : session?.photoUrl;
 
     return Material(
       color: colors.surface,
@@ -39,6 +72,47 @@ class AppHeader extends StatelessWidget {
                           ),
                         ),
                       ],
+                    ),
+                  ),
+                  const Spacer(),
+                  Semantics(
+                    button: true,
+                    label: 'Open profile',
+                    child: InkWell(
+                      onTap: () => context.go('/profile'),
+                      borderRadius: BorderRadius.circular(24),
+                      child: Padding(
+                        padding: const EdgeInsets.all(4),
+                        child: CircleAvatar(
+                          radius: 20,
+                          backgroundColor: colors.primary,
+                          child: photoUrl == null || photoUrl.isEmpty
+                              ? Text(
+                                  initial,
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                )
+                              : ClipOval(
+                                  child: Image.network(
+                                    photoUrl,
+                                    width: 40,
+                                    height: 40,
+                                    fit: BoxFit.cover,
+                                    errorBuilder: (_, _, _) => Center(
+                                      child: Text(
+                                        initial,
+                                        style: const TextStyle(
+                                          color: Colors.white,
+                                          fontWeight: FontWeight.w700,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                        ),
+                      ),
                     ),
                   ),
                 ],

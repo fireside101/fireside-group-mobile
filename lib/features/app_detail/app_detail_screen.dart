@@ -10,6 +10,7 @@ import '../../data/models/health_status.dart';
 import '../../data/providers.dart';
 import '../app_card/app_card.dart';
 import '../app_card/status_indicator.dart';
+import '../shell/app_bottom_nav.dart';
 
 /// Play Store style app detail: big icon, name, health + an Open action, the
 /// full description and a details list. "Open" launches the web app.
@@ -33,15 +34,17 @@ class _AppDetailScreenState extends ConsumerState<AppDetailScreen> {
   Widget build(BuildContext context) {
     final colors = context.appColors;
     final catalogue = ref.watch(catalogueProvider);
-    final app = catalogue.value
-        ?.where((a) => a.id == widget.appId)
-        .firstOrNull;
+    final app = catalogue.value?.where((a) => a.id == widget.appId).firstOrNull;
 
     if (app == null) {
       return Scaffold(
         backgroundColor: colors.ivory,
         appBar: AppBar(),
         body: const Center(child: CircularProgressIndicator()),
+        bottomNavigationBar: const AppBottomNav(
+          currentIndex: 0,
+          enableAnimations: false,
+        ),
       );
     }
 
@@ -117,6 +120,10 @@ class _AppDetailScreenState extends ConsumerState<AppDetailScreen> {
           _DetailsList(application: app),
         ],
       ),
+      bottomNavigationBar: const AppBottomNav(
+        currentIndex: 0,
+        enableAnimations: false,
+      ),
     );
   }
 }
@@ -170,7 +177,7 @@ class _DetailsList extends StatelessWidget {
         application.category.isEmpty
             ? '—'
             : application.category[0].toUpperCase() +
-                application.category.substring(1),
+                  application.category.substring(1),
       ),
       (LucideIcons.server, 'Access', application.repository ?? 'Web app'),
     ];
