@@ -12,19 +12,15 @@ import 'package:integration_test/integration_test.dart';
 /// hitting Google's platform flow.
 class _FakeAuthService extends AuthService {
   @override
-  Future<AuthSession?> restoreSession() async => const AuthSession(
-        name: 'Test User',
-        email: 'test@fireside.africa',
-      );
+  Future<AuthSession?> restoreSession() async =>
+      const AuthSession(name: 'Test User', email: 'test@fireside.africa');
 
   @override
-  Future<bool> isSignedIn() async => true;
-
-  @override
-  Future<AuthSession?> signIn() async => const AuthSession(
-        name: 'Test User',
-        email: 'test@fireside.africa',
-      );
+  Future<AuthSession?> signIn({
+    required String email,
+    required String password,
+  }) async =>
+      const AuthSession(name: 'Test User', email: 'test@fireside.africa');
 
   @override
   Future<void> signOut() async {}
@@ -45,12 +41,12 @@ void main() {
     GoogleFonts.config.allowRuntimeFetching = false;
   });
 
-  testWidgets('sign-in -> home -> search -> open -> recent strip', (tester) async {
+  testWidgets('sign-in -> home -> search -> open -> recent strip', (
+    tester,
+  ) async {
     await tester.pumpWidget(
       ProviderScope(
-        overrides: [
-          authServiceProvider.overrideWithValue(_FakeAuthService()),
-        ],
+        overrides: [authServiceProvider.overrideWithValue(_FakeAuthService())],
         child: const FiresideGroupApp(),
       ),
     );

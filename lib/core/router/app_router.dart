@@ -12,7 +12,7 @@ import '../../../features/settings/settings_screen.dart';
 import '../../../features/support/support_screen.dart';
 
 final routerProvider = Provider<GoRouter>((ref) {
-  return GoRouter(
+  final router = GoRouter(
     initialLocation: '/',
     redirect: (context, state) {
       final auth = ref.read(authControllerProvider);
@@ -29,10 +29,7 @@ final routerProvider = Provider<GoRouter>((ref) {
         path: '/sign-in',
         builder: (context, state) => const SignInScreen(),
       ),
-      GoRoute(
-        path: '/',
-        builder: (context, state) => const HomeScreen(),
-      ),
+      GoRoute(path: '/', builder: (context, state) => const HomeScreen()),
       GoRoute(
         path: '/applications',
         builder: (context, state) => const AllApplicationsScreen(),
@@ -51,16 +48,16 @@ final routerProvider = Provider<GoRouter>((ref) {
       ),
       GoRoute(
         path: '/app/:appId',
-        builder: (context, state) => AppDetailScreen(
-          appId: state.pathParameters['appId']!,
-        ),
+        builder: (context, state) =>
+            AppDetailScreen(appId: state.pathParameters['appId']!),
       ),
       GoRoute(
         path: '/app/:appId/open',
-        builder: (context, state) => AppWebViewScreen(
-          appId: state.pathParameters['appId']!,
-        ),
+        builder: (context, state) =>
+            AppWebViewScreen(appId: state.pathParameters['appId']!),
       ),
     ],
   );
+  ref.listen(authControllerProvider, (_, _) => router.refresh());
+  return router;
 });

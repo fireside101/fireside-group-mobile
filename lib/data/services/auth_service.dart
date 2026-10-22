@@ -1,98 +1,95 @@
-import 'dart:convert';
-
-import 'package:flutter_secure_storage/flutter_secure_storage.dart';
-import 'package:google_sign_in/google_sign_in.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 /// In-memory representation of the signed-in Workspace user.
 class AuthSession {
-  const AuthSession({
-    required this.name,
-    required this.email,
-    this.photoUrl,
-  });
+  const AuthSession({required this.name, required this.email, this.photoUrl});
 
   final String name;
   final String email;
   final String? photoUrl;
 
-  Map<String, dynamic> toJson() =>
-      {'name': name, 'email': email, 'photoUrl': photoUrl};
+  Map<String, dynamic> toJson() => {
+    'name': name,
+    'email': email,
+    'photoUrl': photoUrl,
+  };
 
   factory AuthSession.fromJson(Map<String, dynamic> json) => AuthSession(
-        name: json['name'] as String,
-        email: json['email'] as String,
-        photoUrl: json['photoUrl'] as String?,
-      );
+    name: json['name'] as String,
+    email: json['email'] as String,
+    photoUrl: json['photoUrl'] as String?,
+  );
 }
 
-/// Wraps google_sign_in plus a secure local session cache.
-///
-/// No token exchange with a backend yet — intentionally minimal. Persisting
-/// {name, email, photoUrl} lets the app restore a "has session" state across
-/// launches without re-prompting the Google account chooser.
+/// Supabase-backed authentication for the mobile portal.
 class AuthService {
-  AuthService({
-    GoogleSignIn? googleSignIn,
-    FlutterSecureStorage? secureStorage,
-  })  : _googleSignIn = googleSignIn ??
-            GoogleSignIn(
-              hostedDomain: 'fireside.africa',
-              scopes: ['email', 'profile'],
-            ),
-        _secureStorage = secureStorage ?? const FlutterSecureStorage();
+  AuthService({SupabaseClient? client}) : _client = client ?? _tryClient();
 
-  static const _sessionKey = 'auth_session';
+  final SupabaseClient? _client;
 
-  final GoogleSignIn _googleSignIn;
-  final FlutterSecureStorage _secureStorage;
+  bool get isConfigured => _client != null;
 
-  Stream<GoogleSignInAccount?> get onCurrentUserChanged =>
-      _googleSignIn.onCurrentUserChanged;
-
-  Future<bool> isSignedIn() => _googleSignIn.isSignedIn();
-
-  Future<AuthSession?> signIn() async {
-    // DEV BYPASS: Auto-login for UI development
-    final session = const AuthSession(
-      name: 'Developer User',
-      email: 'developer@fireside.africa',
-      photoUrl: null,
+  Future<AuthSession?> signIn({
+    required String email,
+    required String password,
+  }) async {
+    final client = _requireClient();
+    final response = await client.auth.signInWithPassword(
+      email: email.trim(),
+      password: password,
     );
-    await _secureStorage.write(
-      key: _sessionKey,
-      value: jsonEncode(session.toJson()),
-    );
-    return session;
-
-    /*
-    final account = await _googleSignIn.signIn();
-    if (account == null) return null;
-    final session = AuthSession(
-      name: account.displayName ?? account.email,
-      email: account.email,
-      photoUrl: account.photoUrl,
-    );
-    await _secureStorage.write(
-      key: _sessionKey,
-      value: jsonEncode(session.toJson()),
-    );
-    return session;
-    */
+    return _sessionFromUser(response.user);
   }
 
   Future<void> signOut() async {
-    await _secureStorage.delete(key: _sessionKey);
-    await _googleSignIn.signOut();
+    await _requireClient().auth.signOut();
   }
 
   Future<AuthSession?> restoreSession() async {
-    final raw = await _secureStorage.read(key: _sessionKey);
-    if (raw == null) return null;
+    final client = _client;
+    if (client == null) return null;
+    return _sessionFromUser(client.auth.currentUser);
+  }
+
+  Future<void> sendPasswordReset(String email) async {
+    await _requireClient().auth.resetPasswordForEmail(email.trim());
+  }
+
+  SupabaseClient _requireClient() {
+    final client = _client;
+    if (client == null) {
+      throw StateError(
+        'Portal sign-in is not configured. Build with SUPABASE_URL and '
+        'SUPABASE_ANON_KEY.',
+      );
+    }
+    return client;
+  }
+
+  static SupabaseClient? _tryClient() {
     try {
-      return AuthSession.fromJson(jsonDecode(raw) as Map<String, dynamic>);
+      return Supabase.instance.client;
     } catch (_) {
-      await _secureStorage.delete(key: _sessionKey);
       return null;
     }
+  }
+
+  static AuthSession? _sessionFromUser(User? user) {
+    if (user == null) return null;
+    final metadata = user.userMetadata ?? <String, dynamic>{};
+    final fullName = metadata['full_name'];
+    final name = metadata['name'];
+    final displayName = fullName is String && fullName.trim().isNotEmpty
+        ? fullName.trim()
+        : name is String && name.trim().isNotEmpty
+        ? name.trim()
+        : user.email ?? 'Fireside user';
+
+    final avatar = metadata['avatar_url'];
+    return AuthSession(
+      name: displayName,
+      email: user.email ?? '',
+      photoUrl: avatar is String && avatar.isNotEmpty ? avatar : null,
+    );
   }
 }

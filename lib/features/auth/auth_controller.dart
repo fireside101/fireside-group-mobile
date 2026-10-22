@@ -14,19 +14,32 @@ class AuthController extends StateNotifier<AsyncValue<AuthSession?>> {
   bool get isAuthenticated =>
       state.hasValue && state.value != null && !state.isLoading;
 
+  Future<void> refresh() => _restore();
+
   Future<void> _restore() async {
     final session = await _service.restoreSession();
     state = AsyncValue.data(session);
   }
 
-  Future<bool> signIn() async {
+  Future<bool> signIn(String email, String password) async {
+    state = const AsyncValue.loading();
     try {
-      final session = await _service.signIn();
+      final session = await _service.signIn(email: email, password: password);
       if (session != null) {
         state = AsyncValue.data(session);
         return true;
       }
       return false;
+    } catch (error, stack) {
+      state = AsyncError(error, stack);
+      return false;
+    }
+  }
+
+  Future<bool> sendPasswordReset(String email) async {
+    try {
+      await _service.sendPasswordReset(email);
+      return true;
     } catch (error, stack) {
       state = AsyncError(error, stack);
       return false;
@@ -42,6 +55,7 @@ class AuthController extends StateNotifier<AsyncValue<AuthSession?>> {
   }
 }
 
-final authControllerProvider = StateNotifierProvider<AuthController, AsyncValue<AuthSession?>>(
-  (ref) => AuthController(ref.watch(authServiceProvider)),
-);
+final authControllerProvider =
+    StateNotifierProvider<AuthController, AsyncValue<AuthSession?>>(
+      (ref) => AuthController(ref.watch(authServiceProvider)),
+    );
