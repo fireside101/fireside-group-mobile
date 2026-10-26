@@ -13,6 +13,18 @@ import '../../data/providers.dart';
 import '../app_card/app_icon_map.dart';
 import '../app_card/status_indicator.dart';
 
+bool usesMobileGatewayFor(String appId) => const {
+  'scorecard',
+  'warehouse',
+  'tadhkara',
+  'maintenance-tracker',
+}.contains(appId);
+
+String mobileGatewayPathFor(String appId) {
+  if (appId == 'maintenance-tracker') return '/api/auth/sso/mobile';
+  return '/auth/fireside/mobile';
+}
+
 class AppWebViewScreen extends ConsumerStatefulWidget {
   final String appId;
 
@@ -116,7 +128,7 @@ class _AppWebViewScreenState extends ConsumerState<AppWebViewScreen> {
   }
 
   Future<void> _buildController(FiresideApplication app) async {
-    final usesMobileGateway = app.id == 'scorecard' || app.id == 'warehouse';
+    final usesMobileGateway = usesMobileGatewayFor(app.id);
     final accessToken = usesMobileGateway
         ? Supabase.instance.client.auth.currentSession?.accessToken
         : null;
@@ -140,7 +152,9 @@ class _AppWebViewScreenState extends ConsumerState<AppWebViewScreen> {
       )
       ..loadRequest(
         Uri.parse(
-          usesMobileGateway ? '${app.url}/auth/fireside/mobile' : app.url!,
+          usesMobileGateway
+              ? '${app.url!.replaceFirst(RegExp(r'\/$'), '')}${mobileGatewayPathFor(app.id)}'
+              : app.url!,
         ),
         headers: headers,
       );

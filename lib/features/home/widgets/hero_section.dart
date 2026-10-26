@@ -24,13 +24,22 @@ class HeroSection extends ConsumerWidget {
     final colors = context.appColors;
     final name = ref.watch(authControllerProvider).value?.name;
     final firstName = name?.split(' ').first;
-    final greeting =
-        firstName == null || firstName.isEmpty
-            ? 'Welcome back.'
-            : 'Welcome back, $firstName.';
+    final greeting = firstName == null || firstName.isEmpty
+        ? 'Welcome back.'
+        : 'Welcome back, $firstName.';
     return Container(
+      margin: const EdgeInsets.fromLTRB(16, 16, 16, 4),
       padding: const EdgeInsets.fromLTRB(20, 32, 20, 32),
       decoration: BoxDecoration(
+        border: Border.all(color: Colors.white.withValues(alpha: 0.28)),
+        borderRadius: BorderRadius.circular(28),
+        boxShadow: [
+          BoxShadow(
+            color: colors.charcoal.withValues(alpha: 0.16),
+            blurRadius: 22,
+            offset: const Offset(0, 10),
+          ),
+        ],
         gradient: LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
@@ -42,16 +51,13 @@ class HeroSection extends ConsumerWidget {
         children: [
           Text(
             greeting,
-            style: AppTypography.displayMedium().copyWith(
-              color: Colors.white,
-            ),
+            style: AppTypography.displayMedium().copyWith(color: Colors.white),
           ),
           const SizedBox(height: 6),
           Text(
             'Launch any internal tool — your apps are one tap away.',
-            style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                  color: Colors.white.withValues(alpha: 0.85),
-                ),
+            style: Theme.of(context).textTheme.bodyLarge
+                ?.copyWith(color: Colors.white.withValues(alpha: 0.85)),
           ),
           const SizedBox(height: 24),
           AppSearchBar(
@@ -66,9 +72,8 @@ class HeroSection extends ConsumerWidget {
               const SizedBox(width: 6),
               Text(
                 'Fireside Africa · Internal',
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: Colors.white.withValues(alpha: 0.75),
-                    ),
+                style: Theme.of(context).textTheme.bodySmall
+                    ?.copyWith(color: Colors.white.withValues(alpha: 0.75)),
               ),
             ],
           ),

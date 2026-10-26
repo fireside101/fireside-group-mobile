@@ -167,7 +167,7 @@ class _LoginCard extends StatelessWidget {
             Text(
               'FIRESIDE GROUP ACCOUNT',
               style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                color: colors.primary,
+                color: colors.textAccent,
                 fontWeight: FontWeight.w800,
                 letterSpacing: 1.4,
               ),
@@ -224,8 +224,7 @@ class _LoginCard extends StatelessWidget {
                   : null,
             ),
             const SizedBox(height: 6),
-            Align(
-              alignment: Alignment.centerRight,
+            Center(
               child: TextButton(
                 onPressed: busy ? null : onResetPassword,
                 child: const Text('Register / reset password'),

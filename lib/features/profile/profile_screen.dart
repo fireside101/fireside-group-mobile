@@ -508,7 +508,10 @@ class _ProfileHero extends StatelessWidget {
                   const SizedBox(height: 9),
                   Chip(
                     label: Text(department),
-                    labelStyle: TextStyle(color: colors.primary, fontSize: 12),
+                    labelStyle: TextStyle(
+                      color: colors.textAccent,
+                      fontSize: 12,
+                    ),
                     backgroundColor: colors.primary.withValues(alpha: 0.1),
                     side: BorderSide.none,
                     visualDensity: VisualDensity.compact,

@@ -11,6 +11,7 @@ class AppColors extends ThemeExtension<AppColors> {
   final Color border;
   final Color sand;
   final Color accent;
+  final Color textAccent;
   final Color statusGreen;
   final Color statusBad;
   final Color statusAmber;
@@ -25,6 +26,7 @@ class AppColors extends ThemeExtension<AppColors> {
     required this.border,
     required this.sand,
     required this.accent,
+    required this.textAccent,
     required this.statusGreen,
     required this.statusBad,
     required this.statusAmber,
@@ -40,6 +42,7 @@ class AppColors extends ThemeExtension<AppColors> {
     border: Color(0xFFBDEAF3),
     sand: Color(0xFF7B6CC4),
     accent: Color(0xFF3D3587),
+    textAccent: Color(0xFF006D7D),
     statusGreen: Color(0xFF237A3B),
     statusBad: Color(0xFFB42318),
     statusAmber: Color(0xFFA15C07),
@@ -55,6 +58,7 @@ class AppColors extends ThemeExtension<AppColors> {
     border: Color(0xFF233140),
     sand: Color(0xFF2E3B4D),
     accent: Color(0xFF3D3587),
+    textAccent: Color(0xFF67E8F9),
     statusGreen: Color(0xFF46C478),
     statusBad: Color(0xFFFF8A80),
     statusAmber: Color(0xFFFFC24B),
@@ -71,6 +75,7 @@ class AppColors extends ThemeExtension<AppColors> {
     Color? border,
     Color? sand,
     Color? accent,
+    Color? textAccent,
     Color? statusGreen,
     Color? statusBad,
     Color? statusAmber,
@@ -85,6 +90,7 @@ class AppColors extends ThemeExtension<AppColors> {
       border: border ?? this.border,
       sand: sand ?? this.sand,
       accent: accent ?? this.accent,
+      textAccent: textAccent ?? this.textAccent,
       statusGreen: statusGreen ?? this.statusGreen,
       statusBad: statusBad ?? this.statusBad,
       statusAmber: statusAmber ?? this.statusAmber,
@@ -104,6 +110,7 @@ class AppColors extends ThemeExtension<AppColors> {
       border: Color.lerp(border, other.border, t)!,
       sand: Color.lerp(sand, other.sand, t)!,
       accent: Color.lerp(accent, other.accent, t)!,
+      textAccent: Color.lerp(textAccent, other.textAccent, t)!,
       statusGreen: Color.lerp(statusGreen, other.statusGreen, t)!,
       statusBad: Color.lerp(statusBad, other.statusBad, t)!,
       statusAmber: Color.lerp(statusAmber, other.statusAmber, t)!,
