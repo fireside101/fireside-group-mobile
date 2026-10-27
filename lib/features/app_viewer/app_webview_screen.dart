@@ -2,8 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
+import 'package:permission_handler/permission_handler.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:webview_flutter/webview_flutter.dart';
+import 'package:webview_flutter_android/webview_flutter_android.dart';
 
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_typography.dart';
@@ -167,6 +169,49 @@ class _AppWebViewScreenState extends ConsumerState<AppWebViewScreen> {
     }
   }
 
+  Future<void> _handleWebViewPermission(
+    WebViewPermissionRequest request,
+  ) async {
+    final requestsCamera = request.types.contains(
+      WebViewPermissionResourceType.camera,
+    );
+    final requestsMicrophone = request.types.contains(
+      WebViewPermissionResourceType.microphone,
+    );
+
+    // PTW only needs the camera. Do not grant microphone access to an embedded
+    // app unless that app explicitly becomes an approved use case.
+    if (!requestsCamera || requestsMicrophone) {
+      await request.deny();
+      return;
+    }
+
+    final status = await Permission.camera.request();
+    if (status.isGranted) {
+      await request.grant();
+    } else {
+      await request.deny();
+    }
+  }
+
+  Future<void> _configureAndroidWebViewPermissions(
+    WebViewController controller,
+  ) async {
+    if (controller.platform is! AndroidWebViewController) return;
+
+    final androidController = controller.platform as AndroidWebViewController;
+    await androidController.setGeolocationEnabled(true);
+    await androidController.setGeolocationPermissionsPromptCallbacks(
+      onShowPrompt: (request) async {
+        final status = await Permission.locationWhenInUse.request();
+        return GeolocationPermissionsResponse(
+          allow: status.isGranted,
+          retain: status.isGranted,
+        );
+      },
+    );
+  }
+
   Future<void> _buildController(FiresideApplication app) async {
     final usesMobileGateway = usesMobileGatewayFor(app.id);
     final accessToken = usesMobileGateway
@@ -175,30 +220,38 @@ class _AppWebViewScreenState extends ConsumerState<AppWebViewScreen> {
     final headers = accessToken == null
         ? const <String, String>{}
         : {'Authorization': 'Bearer $accessToken'};
-    final controller = WebViewController()
-      ..setJavaScriptMode(JavaScriptMode.unrestricted)
-      ..setBackgroundColor(context.appColors.ivory)
-      ..setNavigationDelegate(
-        NavigationDelegate(
-          onProgress: (progress) {
-            if (progress >= 100) {
-              if (mounted) setState(() => _isLoading = false);
-            }
-          },
-          onPageFinished: (url) {
-            if (mounted) setState(() => _isLoading = false);
-            _updateWebViewHistory();
-          },
-        ),
-      )
-      ..loadRequest(
-        Uri.parse(
-          usesMobileGateway
-              ? '${app.url!.replaceFirst(RegExp(r'\/$'), '')}${mobileGatewayPathFor(app.id)}'
-              : app.url!,
-        ),
-        headers: headers,
-      );
+    final controller =
+        WebViewController(onPermissionRequest: _handleWebViewPermission)
+          ..setJavaScriptMode(JavaScriptMode.unrestricted)
+          ..setBackgroundColor(context.appColors.ivory)
+          ..addJavaScriptChannel(
+            'FiresideGroupPermissions',
+            onMessageReceived: (_) async {
+              await openAppSettings();
+            },
+          )
+          ..setNavigationDelegate(
+            NavigationDelegate(
+              onProgress: (progress) {
+                if (progress >= 100) {
+                  if (mounted) setState(() => _isLoading = false);
+                }
+              },
+              onPageFinished: (url) {
+                if (mounted) setState(() => _isLoading = false);
+                _updateWebViewHistory();
+              },
+            ),
+          );
+    await _configureAndroidWebViewPermissions(controller);
+    await controller.loadRequest(
+      Uri.parse(
+        usesMobileGateway
+            ? '${app.url!.replaceFirst(RegExp(r'\/$'), '')}${mobileGatewayPathFor(app.id)}'
+            : app.url!,
+      ),
+      headers: headers,
+    );
     _controller = controller;
     if (mounted) setState(() {});
   }
