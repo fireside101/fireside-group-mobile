@@ -55,7 +55,7 @@ class HeroSection extends ConsumerWidget {
           ),
           const SizedBox(height: 6),
           Text(
-            'Launch any internal tool — your apps are one tap away.',
+            'Launch any internal tool. Your apps are one tap away.',
             style: Theme.of(context).textTheme.bodyLarge
                 ?.copyWith(color: Colors.white.withValues(alpha: 0.85)),
           ),

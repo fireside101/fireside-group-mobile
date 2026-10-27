@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_typography.dart';
@@ -57,6 +58,7 @@ class _SignInScreenState extends ConsumerState<SignInScreen> {
                     message: _message,
                     messageIsError: _messageIsError,
                     onSubmit: _submit,
+                    onRegister: _register,
                     onResetPassword: _resetPassword,
                   ),
                 ),
@@ -73,16 +75,22 @@ class _SignInScreenState extends ConsumerState<SignInScreen> {
     FocusManager.instance.primaryFocus?.unfocus();
     setState(() => _message = null);
 
-    final success = await ref
-        .read(authControllerProvider.notifier)
-        .signIn(_emailController.text, _passwordController.text);
+    bool success;
+    Object? error;
+    try {
+      success = await ref
+          .read(authControllerProvider.notifier)
+          .signIn(_emailController.text, _passwordController.text);
+    } catch (caught) {
+      success = false;
+      error = caught;
+    }
     if (!mounted) return;
     if (success) {
       context.go('/');
       return;
     }
 
-    final error = ref.read(authControllerProvider).error;
     setState(() {
       _message = _friendlyError(error);
       _messageIsError = true;
@@ -99,9 +107,14 @@ class _SignInScreenState extends ConsumerState<SignInScreen> {
       return;
     }
 
-    final sent = await ref
-        .read(authControllerProvider.notifier)
-        .sendPasswordReset(email);
+    bool sent;
+    try {
+      sent = await ref
+          .read(authControllerProvider.notifier)
+          .sendPasswordReset(email);
+    } catch (_) {
+      sent = false;
+    }
     if (!mounted) return;
     setState(() {
       _message = sent
@@ -111,8 +124,53 @@ class _SignInScreenState extends ConsumerState<SignInScreen> {
     });
   }
 
+  Future<void> _register() async {
+    if (!_formKey.currentState!.validate()) return;
+    FocusManager.instance.primaryFocus?.unfocus();
+    setState(() => _message = null);
+
+    bool registered;
+    Object? error;
+    try {
+      registered = await ref
+          .read(authControllerProvider.notifier)
+          .register(_emailController.text, _passwordController.text);
+    } catch (caught) {
+      registered = false;
+      error = caught;
+    }
+    if (!mounted) return;
+
+    if (registered) {
+      context.go('/');
+      return;
+    }
+
+    final message = error == null
+        ? 'Registration was received. Check your email to confirm your account, then sign in.'
+        : _friendlyError(error);
+    setState(() {
+      _message = message;
+      _messageIsError = error != null;
+    });
+  }
+
   String _friendlyError(Object? error) {
     if (error is StateError) return error.message;
+    if (error is AuthException) {
+      final message = error.message.toLowerCase();
+      if (message.contains('invalid login credentials')) {
+        return 'Email or password is incorrect.';
+      }
+      if (message.contains('already registered') ||
+          message.contains('already been registered')) {
+        return 'That email is already registered. Try signing in or resetting the password.';
+      }
+      if (message.contains('email not confirmed')) {
+        return 'Confirm your email address before signing in.';
+      }
+      return error.message;
+    }
     final text = error?.toString() ?? '';
     if (text.contains('Invalid login credentials')) {
       return 'Email or password is incorrect.';
@@ -128,6 +186,7 @@ class _LoginCard extends StatelessWidget {
     required this.passwordController,
     required this.busy,
     required this.onSubmit,
+    required this.onRegister,
     required this.onResetPassword,
     this.message,
     required this.messageIsError,
@@ -140,6 +199,7 @@ class _LoginCard extends StatelessWidget {
   final String? message;
   final bool messageIsError;
   final VoidCallback onSubmit;
+  final VoidCallback onRegister;
   final VoidCallback onResetPassword;
 
   @override
@@ -224,11 +284,19 @@ class _LoginCard extends StatelessWidget {
                   : null,
             ),
             const SizedBox(height: 6),
-            Center(
-              child: TextButton(
-                onPressed: busy ? null : onResetPassword,
-                child: const Text('Register / reset password'),
-              ),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                TextButton(
+                  onPressed: busy ? null : onRegister,
+                  child: const Text('Register'),
+                ),
+                const SizedBox(width: 8),
+                TextButton(
+                  onPressed: busy ? null : onResetPassword,
+                  child: const Text('Reset password'),
+                ),
+              ],
             ),
             const SizedBox(height: 4),
             SizedBox(

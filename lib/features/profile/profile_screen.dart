@@ -76,6 +76,17 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
   @override
   Widget build(BuildContext context) {
     final colors = context.appColors;
+    ref.listen<AsyncValue<ProfileResponse?>>(profileCacheProvider, (_, next) {
+      if (next.hasValue && next.value != null) {
+        _applyProfileResponse(next.value!);
+      } else if (next.hasError && mounted) {
+        setState(() {
+          _loading = false;
+          _message = next.error.toString();
+          _messageIsError = true;
+        });
+      }
+    });
     final session = ref.watch(authControllerProvider).value;
     final name = session?.name.trim().isNotEmpty == true
         ? session!.name.trim()
@@ -100,6 +111,9 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                   department: _details?.department ?? '',
                   initial: initial,
                   photoUrl: photoUrl,
+                  onPhotoTap: photoUrl == null || photoUrl.isEmpty
+                      ? null
+                      : () => _showExpandedProfilePicture(context, photoUrl),
                 ),
                 const SizedBox(height: 20),
                 if (_message != null) ...[
@@ -150,6 +164,9 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                     photoUrl: photoUrl,
                     uploading: _uploading,
                     onUpload: _uploadPicture,
+                    onPhotoTap: photoUrl == null || photoUrl.isEmpty
+                        ? null
+                        : () => _showExpandedProfilePicture(context, photoUrl),
                     onRemove: photoUrl == null || photoUrl.isEmpty
                         ? null
                         : _removePicture,
@@ -252,18 +269,22 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                 ),
                 const SizedBox(height: 20),
                 _ProfileCard(
-                  child: ListTile(
-                    contentPadding: EdgeInsets.zero,
-                    leading: Icon(LucideIcons.logOut, color: colors.statusBad),
-                    title: Text(
-                      'Sign out',
-                      style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                        color: colors.statusBad,
-                        fontWeight: FontWeight.w700,
+                  padding: const EdgeInsets.all(16),
+                  child: OutlinedButton.icon(
+                    onPressed: () => _signOut(context),
+                    icon: const Icon(LucideIcons.logOut),
+                    label: const Text('Sign out'),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: colors.statusBad,
+                      side: BorderSide(
+                        color: colors.statusBad.withValues(alpha: 0.45),
                       ),
+                      minimumSize: const Size.fromHeight(52),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                      textStyle: const TextStyle(fontWeight: FontWeight.w700),
                     ),
-                    subtitle: const Text('End your session on this device'),
-                    onTap: () => _signOut(context),
                   ),
                 ),
               ],
@@ -276,23 +297,30 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
   }
 
   Future<void> _loadProfile() async {
-    try {
-      final response = await ref.read(profileServiceProvider).fetchProfile();
-      if (!mounted) return;
-      setState(() {
-        _details = response.details;
-        _options = response.options;
-        _avatarUrl = response.avatarUrl;
-        _loading = false;
-      });
-      if (_details != null) _fillForm(_details!.editable);
-    } catch (error) {
-      if (!mounted) return;
+    await ref.read(profileCacheProvider.notifier).load();
+    if (!mounted) return;
+    final profile = ref.read(profileCacheProvider);
+    if (profile.hasError) {
       setState(() {
         _loading = false;
-        _message = error.toString();
+        _message = profile.error.toString();
         _messageIsError = true;
       });
+    } else if (profile.hasValue && profile.value != null) {
+      _applyProfileResponse(profile.value!);
+    }
+  }
+
+  void _applyProfileResponse(ProfileResponse response) {
+    if (!mounted) return;
+    setState(() {
+      _details = response.details;
+      _options = response.options;
+      _avatarUrl = response.avatarUrl;
+      _loading = false;
+    });
+    if (!_editing && response.details != null) {
+      _fillForm(response.details!.editable);
     }
   }
 
@@ -344,7 +372,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
       final details = await ref
           .read(profileServiceProvider)
           .updateDetails(value);
-      await ref.read(authControllerProvider.notifier).refresh();
+      ref.read(profileCacheProvider.notifier).updateDetails(details);
       if (!mounted) return;
       setState(() {
         _details = details;
@@ -379,7 +407,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
       final avatarUrl = await ref
           .read(profileServiceProvider)
           .uploadAvatar(bytes: bytes, fileName: file.name);
-      await ref.read(authControllerProvider.notifier).refresh();
+      ref.read(profileCacheProvider.notifier).updateAvatar(avatarUrl);
       if (!mounted) return;
       setState(() {
         _avatarUrl = avatarUrl;
@@ -404,7 +432,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     });
     try {
       await ref.read(profileServiceProvider).removeAvatar();
-      await ref.read(authControllerProvider.notifier).refresh();
+      ref.read(profileCacheProvider.notifier).updateAvatar('');
       if (!mounted) return;
       setState(() {
         _avatarUrl = '';
@@ -458,6 +486,43 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     if (!context.mounted) return;
     context.go('/sign-in');
   }
+
+  void _showExpandedProfilePicture(BuildContext context, String? photoUrl) {
+    if (photoUrl == null || photoUrl.isEmpty) return;
+
+    showDialog<void>(
+      context: context,
+      barrierColor: Colors.black.withValues(alpha: 0.82),
+      builder: (context) => Dialog(
+        backgroundColor: Colors.transparent,
+        insetPadding: const EdgeInsets.all(16),
+        child: Stack(
+          alignment: Alignment.topRight,
+          children: [
+            InteractiveViewer(
+              minScale: 0.8,
+              maxScale: 4,
+              child: Image.network(
+                photoUrl,
+                fit: BoxFit.contain,
+                errorBuilder: (context, error, stackTrace) => const Icon(
+                  Icons.broken_image_outlined,
+                  color: Colors.white,
+                  size: 64,
+                ),
+              ),
+            ),
+            IconButton(
+              onPressed: () => Navigator.of(context).pop(),
+              tooltip: 'Close preview',
+              icon: const Icon(Icons.close, color: Colors.white),
+              style: IconButton.styleFrom(backgroundColor: Colors.black54),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }
 
 class _ProfileHero extends StatelessWidget {
@@ -467,6 +532,7 @@ class _ProfileHero extends StatelessWidget {
     required this.department,
     required this.initial,
     this.photoUrl,
+    this.onPhotoTap,
   });
 
   final String name;
@@ -474,6 +540,7 @@ class _ProfileHero extends StatelessWidget {
   final String department;
   final String initial;
   final String? photoUrl;
+  final VoidCallback? onPhotoTap;
 
   @override
   Widget build(BuildContext context) {
@@ -482,7 +549,12 @@ class _ProfileHero extends StatelessWidget {
       padding: const EdgeInsets.all(24),
       child: Row(
         children: [
-          _Avatar(initial: initial, photoUrl: photoUrl, radius: 44),
+          _Avatar(
+            initial: initial,
+            photoUrl: photoUrl,
+            radius: 44,
+            onTap: onPhotoTap,
+          ),
           const SizedBox(width: 20),
           Expanded(
             child: Column(
@@ -684,20 +756,27 @@ class _PersonalDetailsCard extends StatelessWidget {
               ),
             )
           else ...[
-            Wrap(
-              spacing: 12,
-              runSpacing: 12,
-              children: details!.fields
-                  .map(
-                    (field) => SizedBox(
-                      width: 270,
-                      child: _DetailTile(
-                        label: field.label,
-                        value: field.value,
-                      ),
-                    ),
-                  )
-                  .toList(),
+            LayoutBuilder(
+              builder: (context, constraints) {
+                final tileWidth = constraints.maxWidth >= 560
+                    ? (constraints.maxWidth - 12) / 2
+                    : constraints.maxWidth;
+                return Wrap(
+                  spacing: 12,
+                  runSpacing: 12,
+                  children: details!.fields
+                      .map(
+                        (field) => SizedBox(
+                          width: tileWidth,
+                          child: _DetailTile(
+                            label: field.label,
+                            value: field.value,
+                          ),
+                        ),
+                      )
+                      .toList(),
+                );
+              },
             ),
             const SizedBox(height: 16),
             SizedBox(
@@ -766,6 +845,7 @@ class _PictureCard extends StatelessWidget {
     required this.photoUrl,
     required this.uploading,
     required this.onUpload,
+    required this.onPhotoTap,
     required this.onRemove,
   });
 
@@ -773,6 +853,7 @@ class _PictureCard extends StatelessWidget {
   final String? photoUrl;
   final bool uploading;
   final VoidCallback onUpload;
+  final VoidCallback? onPhotoTap;
   final VoidCallback? onRemove;
 
   @override
@@ -791,7 +872,12 @@ class _PictureCard extends StatelessWidget {
           ),
           const SizedBox(height: 20),
           Center(
-            child: _Avatar(initial: initial, photoUrl: photoUrl, radius: 52),
+            child: _Avatar(
+              initial: initial,
+              photoUrl: photoUrl,
+              radius: 52,
+              onTap: onPhotoTap,
+            ),
           ),
           const SizedBox(height: 18),
           Row(
@@ -907,17 +993,23 @@ class _DetailTile extends StatelessWidget {
 }
 
 class _Avatar extends StatelessWidget {
-  const _Avatar({required this.initial, required this.radius, this.photoUrl});
+  const _Avatar({
+    required this.initial,
+    required this.radius,
+    this.photoUrl,
+    this.onTap,
+  });
 
   final String initial;
   final String? photoUrl;
   final double radius;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
     final colors = context.appColors;
     final hasPhoto = photoUrl != null && photoUrl!.isNotEmpty;
-    return CircleAvatar(
+    final avatar = CircleAvatar(
       radius: radius,
       backgroundColor: colors.primary,
       backgroundImage: hasPhoto ? NetworkImage(photoUrl!) : null,
@@ -931,6 +1023,17 @@ class _Avatar extends StatelessWidget {
                 fontWeight: FontWeight.w800,
               ),
             ),
+    );
+
+    if (onTap == null) return avatar;
+    return Semantics(
+      button: true,
+      label: 'View profile picture',
+      child: InkWell(
+        onTap: onTap,
+        customBorder: const CircleBorder(),
+        child: avatar,
+      ),
     );
   }
 }
