@@ -11,6 +11,13 @@ class ProfileOptions {
   final List<String> department;
   final List<String> contractor;
 
+  Map<String, dynamic> toJson() => {
+    'city': city,
+    'country': country,
+    'department': department,
+    'contractor': contractor,
+  };
+
   factory ProfileOptions.fromJson(Map<String, dynamic> json) => ProfileOptions(
     city: _strings(json['city']),
     country: _strings(json['country']),
@@ -86,6 +93,8 @@ class ProfileField {
   final String label;
   final String value;
 
+  Map<String, dynamic> toJson() => {'label': label, 'value': value};
+
   factory ProfileField.fromJson(Map<String, dynamic> json) => ProfileField(
     label: _string(json['label']),
     value: _string(json['value']),
@@ -104,6 +113,13 @@ class PersonalDetails {
   final String department;
   final List<ProfileField> fields;
   final ProfileEditableDetails editable;
+
+  Map<String, dynamic> toJson() => {
+    'fullName': fullName,
+    'department': department,
+    'fields': fields.map((field) => field.toJson()).toList(),
+    'editable': editable.toJson(),
+  };
 
   factory PersonalDetails.fromJson(Map<String, dynamic> json) =>
       PersonalDetails(
@@ -129,6 +145,12 @@ class ProfileResponse {
   final PersonalDetails? details;
   final ProfileOptions options;
   final String avatarUrl;
+
+  Map<String, dynamic> toJson() => {
+    'details': details?.toJson(),
+    'options': options.toJson(),
+    'avatarUrl': avatarUrl,
+  };
 
   factory ProfileResponse.fromJson(Map<String, dynamic> json) =>
       ProfileResponse(

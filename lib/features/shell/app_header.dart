@@ -16,23 +16,10 @@ class AppHeader extends ConsumerStatefulWidget {
 }
 
 class _AppHeaderState extends ConsumerState<AppHeader> {
-  String _avatarUrl = '';
-
   @override
   void initState() {
     super.initState();
-    _loadAvatar();
-  }
-
-  Future<void> _loadAvatar() async {
-    if (ref.read(authControllerProvider).value == null) return;
-    try {
-      final response = await ref.read(profileServiceProvider).fetchProfile();
-      if (!mounted || response.avatarUrl.isEmpty) return;
-      setState(() => _avatarUrl = response.avatarUrl);
-    } catch (_) {
-      // Keep the initials fallback when the profile API is unavailable.
-    }
+    ref.read(profileCacheProvider.notifier).load();
   }
 
   @override
@@ -43,7 +30,10 @@ class _AppHeaderState extends ConsumerState<AppHeader> {
         ? session!.name.trim()
         : 'Fireside user';
     final initial = name.characters.first.toUpperCase();
-    final photoUrl = _avatarUrl.isNotEmpty ? _avatarUrl : session?.photoUrl;
+    final cachedProfile = ref.watch(profileCacheProvider).value;
+    final photoUrl = cachedProfile?.avatarUrl.isNotEmpty == true
+        ? cachedProfile!.avatarUrl
+        : session?.photoUrl;
 
     return Material(
       color: colors.surface,

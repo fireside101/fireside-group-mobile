@@ -99,7 +99,7 @@ const List<FiresideApplication> catalogue = [
     description: 'Attendance & permits to work',
     category: 'Platform Services',
     url: 'https://ptw.firesideafrica.cloud/',
-    healthUrl: 'https://ptw.firesideafrica.cloud/api/health',
+    healthUrl: 'https://ptw.firesideafrica.cloud/healthz',
     repository: 'attendance-ptw',
     keywords: ['attendance', 'ptw', 'permits', 'field'],
   ),

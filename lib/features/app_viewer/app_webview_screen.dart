@@ -18,10 +18,27 @@ bool usesMobileGatewayFor(String appId) => const {
   'warehouse',
   'tadhkara',
   'maintenance-tracker',
+  'attendance-ptw',
+  'fuel-control-system',
+  'fleetnow',
 }.contains(appId);
 
 String mobileGatewayPathFor(String appId) {
-  if (appId == 'maintenance-tracker') return '/api/auth/sso/mobile';
+  if (appId == 'maintenance-tracker') {
+    // Maintenance Tracker exposes its backend SSO route behind the frontend
+    // proxy at /api/auth/sso/mobile.
+    return '/api/auth/sso/mobile';
+  }
+  if (appId == 'attendance-ptw') {
+    // PTW explicitly proxies this non-API path to its attendance backend.
+    return '/auth/fireside/mobile';
+  }
+  if (appId == 'fuel-control-system') {
+    return '/api/v1/auth/fireside/mobile';
+  }
+  if (appId == 'fleetnow') {
+    return '/api/auth/sso/fireside/mobile';
+  }
   return '/auth/fireside/mobile';
 }
 
@@ -37,6 +54,7 @@ class AppWebViewScreen extends ConsumerStatefulWidget {
 class _AppWebViewScreenState extends ConsumerState<AppWebViewScreen> {
   WebViewController? _controller;
   bool _isLoading = true;
+  bool _webViewCanGoBack = false;
 
   @override
   void initState() {
@@ -75,56 +93,78 @@ class _AppWebViewScreenState extends ConsumerState<AppWebViewScreen> {
       });
     }
 
-    return Scaffold(
-      backgroundColor: colors.ivory,
-      appBar: AppBar(
-        leading: IconButton(
-          icon: const Icon(LucideIcons.x),
-          onPressed: () => context.pop(),
-          tooltip: 'Close',
+    return PopScope(
+      canPop: !_webViewCanGoBack,
+      onPopInvokedWithResult: (didPop, result) {
+        if (!didPop) _handleSystemBack();
+      },
+      child: Scaffold(
+        backgroundColor: colors.ivory,
+        appBar: AppBar(
+          leading: IconButton(
+            icon: const Icon(LucideIcons.x),
+            onPressed: () => context.pop(),
+            tooltip: 'Close',
+          ),
+          titleSpacing: 0,
+          title: Row(
+            children: [
+              Container(
+                width: 32,
+                height: 32,
+                decoration: BoxDecoration(
+                  color: colors.accent,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Icon(appIconFor(app.id), color: Colors.white, size: 16),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      app.name,
+                      style: Theme.of(context).textTheme.bodyLarge
+                          ?.copyWith(fontWeight: FontWeight.w700),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    StatusIndicator(
+                      status: health.value ?? HealthStatus.unknown,
+                      compact: true,
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
         ),
-        titleSpacing: 0,
-        title: Row(
+        body: Stack(
           children: [
-            Container(
-              width: 32,
-              height: 32,
-              decoration: BoxDecoration(
-                color: colors.accent,
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Icon(appIconFor(app.id), color: Colors.white, size: 16),
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    app.name,
-                    style: Theme.of(context).textTheme.bodyLarge
-                        ?.copyWith(fontWeight: FontWeight.w700),
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  StatusIndicator(
-                    status: health.value ?? HealthStatus.unknown,
-                    compact: true,
-                  ),
-                ],
-              ),
-            ),
+            _controller != null
+                ? WebViewWidget(controller: _controller!)
+                : const SizedBox.shrink(),
+            if (_isLoading) const Center(child: CircularProgressIndicator()),
           ],
         ),
       ),
-      body: Stack(
-        children: [
-          _controller != null
-              ? WebViewWidget(controller: _controller!)
-              : const SizedBox.shrink(),
-          if (_isLoading) const Center(child: CircularProgressIndicator()),
-        ],
-      ),
     );
+  }
+
+  Future<void> _handleSystemBack() async {
+    final controller = _controller;
+    if (controller != null && await controller.canGoBack()) {
+      await controller.goBack();
+      return;
+    }
+    if (mounted) context.pop();
+  }
+
+  Future<void> _updateWebViewHistory() async {
+    final canGoBack = await _controller?.canGoBack() ?? false;
+    if (mounted && canGoBack != _webViewCanGoBack) {
+      setState(() => _webViewCanGoBack = canGoBack);
+    }
   }
 
   Future<void> _buildController(FiresideApplication app) async {
@@ -147,6 +187,7 @@ class _AppWebViewScreenState extends ConsumerState<AppWebViewScreen> {
           },
           onPageFinished: (url) {
             if (mounted) setState(() => _isLoading = false);
+            _updateWebViewHistory();
           },
         ),
       )

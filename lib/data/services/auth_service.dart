@@ -41,6 +41,20 @@ class AuthService {
     return _sessionFromUser(response.user);
   }
 
+  Future<AuthSession?> register({
+    required String email,
+    required String password,
+  }) async {
+    final client = _requireClient();
+    final response = await client.auth.signUp(
+      email: email.trim(),
+      password: password,
+    );
+    // Supabase can create the user without creating a session when email
+    // confirmation is enabled. Keep the user on the login screen in that case.
+    return response.session == null ? null : _sessionFromUser(response.user);
+  }
+
   Future<void> signOut() async {
     await _requireClient().auth.signOut();
   }

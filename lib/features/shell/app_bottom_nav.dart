@@ -87,7 +87,7 @@ class AppBottomNav extends StatelessWidget {
               'baseColor': deepBlue.withValues(alpha: 0.22),
               'baseAccentColor': deepBlueAccent.withValues(alpha: 0.16),
               'glowColor': colors.primary,
-              'podShadowColor': deepBlue.withValues(alpha: 0.5),
+              'podShadowColor': Colors.transparent,
               'podBorderColor': Colors.white.withValues(alpha: 0.18),
               'accentColor': colors.primary,
             },

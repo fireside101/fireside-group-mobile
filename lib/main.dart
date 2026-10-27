@@ -10,10 +10,17 @@ Future<void> main() async {
   const supabaseUrl = String.fromEnvironment('SUPABASE_URL');
   const supabaseAnonKey = String.fromEnvironment('SUPABASE_ANON_KEY');
   if (supabaseUrl.isNotEmpty && supabaseAnonKey.isNotEmpty) {
-    await Supabase.initialize(
-      url: supabaseUrl,
-      publishableKey: supabaseAnonKey,
-    );
+    try {
+      await Supabase.initialize(
+        url: supabaseUrl,
+        publishableKey: supabaseAnonKey,
+      );
+    } catch (error, stack) {
+      // Keep the app renderable when Auth cannot initialize. The login screen
+      // will show a recoverable configuration error instead of a blank app.
+      debugPrint('Supabase initialization failed: $error');
+      debugPrintStack(stackTrace: stack);
+    }
   }
 
   runApp(const ProviderScope(child: FiresideGroupApp()));

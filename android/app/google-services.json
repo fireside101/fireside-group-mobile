@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "49074813454",
+    "project_id": "fireside-app-ef5ad",
+    "storage_bucket": "fireside-app-ef5ad.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:49074813454:android:9bdc760c66499f78e29a5f",
+        "android_client_info": {
+          "package_name": "com.firesideafrica.firesidegroup"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyC5cuARWsOjB_FRV-gAVJmSzCgsSZC1ixY"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
