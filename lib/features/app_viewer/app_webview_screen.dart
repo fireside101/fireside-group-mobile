@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -10,6 +12,7 @@ import '../../core/theme/app_typography.dart';
 import '../../data/models/fireside_application.dart';
 import '../../data/models/health_status.dart';
 import '../../data/providers.dart';
+import '../../data/services/admin_audit_log_service.dart';
 import '../app_card/app_icon_map.dart';
 import '../app_card/status_indicator.dart';
 
@@ -54,7 +57,7 @@ class AppWebViewScreen extends ConsumerStatefulWidget {
 class _AppWebViewScreenState extends ConsumerState<AppWebViewScreen> {
   WebViewController? _controller;
   bool _isLoading = true;
-  bool _webViewCanGoBack = false;
+  bool _handlingBack = false;
 
   @override
   void initState() {
@@ -94,9 +97,12 @@ class _AppWebViewScreenState extends ConsumerState<AppWebViewScreen> {
     }
 
     return PopScope(
-      canPop: !_webViewCanGoBack,
+      // Always intercept the device back action. The WebView history can
+      // change without Flutter rebuilding, so a cached canGoBack value can
+      // otherwise allow the gateway route to pop too early.
+      canPop: false,
       onPopInvokedWithResult: (didPop, result) {
-        if (!didPop) _handleSystemBack();
+        if (!didPop) unawaited(_handleSystemBack());
       },
       child: Scaffold(
         backgroundColor: colors.ivory,
@@ -152,22 +158,26 @@ class _AppWebViewScreenState extends ConsumerState<AppWebViewScreen> {
   }
 
   Future<void> _handleSystemBack() async {
+    if (_handlingBack) return;
+    _handlingBack = true;
     final controller = _controller;
-    if (controller != null && await controller.canGoBack()) {
-      await controller.goBack();
-      return;
-    }
-    if (mounted) context.pop();
-  }
-
-  Future<void> _updateWebViewHistory() async {
-    final canGoBack = await _controller?.canGoBack() ?? false;
-    if (mounted && canGoBack != _webViewCanGoBack) {
-      setState(() => _webViewCanGoBack = canGoBack);
+    try {
+      if (controller != null && await controller.canGoBack()) {
+        await controller.goBack();
+        return;
+      }
+      if (mounted) context.pop();
+    } finally {
+      _handlingBack = false;
     }
   }
 
   Future<void> _buildController(FiresideApplication app) async {
+    recordAppAccessInBackground(
+      ref.read(adminAuditLogServiceProvider),
+      applicationId: app.id,
+      applicationName: app.name,
+    );
     final usesMobileGateway = usesMobileGatewayFor(app.id);
     final accessToken = usesMobileGateway
         ? Supabase.instance.client.auth.currentSession?.accessToken
@@ -187,7 +197,6 @@ class _AppWebViewScreenState extends ConsumerState<AppWebViewScreen> {
           },
           onPageFinished: (url) {
             if (mounted) setState(() => _isLoading = false);
-            _updateWebViewHistory();
           },
         ),
       )

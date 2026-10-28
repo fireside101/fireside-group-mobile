@@ -4,7 +4,9 @@ import 'package:go_router/go_router.dart';
 import '../../../features/app_detail/app_detail_screen.dart';
 import '../../../features/app_viewer/app_webview_screen.dart';
 import '../../../features/applications/all_applications_screen.dart';
+import '../../../features/admin_logs/admin_logs_screen.dart';
 import '../../../features/auth/auth_controller.dart';
+import '../../../features/auth/account_setup_screen.dart';
 import '../../../features/auth/sign_in_screen.dart';
 import '../../../features/home/home_screen.dart';
 import '../../../features/profile/profile_screen.dart';
@@ -18,16 +20,34 @@ final routerProvider = Provider<GoRouter>((ref) {
       final auth = ref.read(authControllerProvider);
       final authenticated =
           auth.hasValue && !auth.isLoading && auth.value != null;
-      final atSignIn = state.matchedLocation == '/sign-in';
+      final atAuthEntry =
+          state.matchedLocation == '/sign-in' ||
+          state.matchedLocation == '/register' ||
+          state.matchedLocation == '/reset-password' ||
+          state.matchedLocation == '/account-setup';
 
-      if (!authenticated && !atSignIn) return '/sign-in';
-      if (authenticated && atSignIn) return '/';
+      if (!authenticated && !atAuthEntry) return '/sign-in';
+      if (authenticated && atAuthEntry) return '/';
       return null;
     },
     routes: [
       GoRoute(
         path: '/sign-in',
         builder: (context, state) => const SignInScreen(),
+      ),
+      GoRoute(
+        path: '/register',
+        builder: (context, state) =>
+            const AccountSetupScreen(mode: AccountSetupMode.register),
+      ),
+      GoRoute(
+        path: '/reset-password',
+        builder: (context, state) =>
+            const AccountSetupScreen(mode: AccountSetupMode.resetPassword),
+      ),
+      GoRoute(
+        path: '/account-setup',
+        redirect: (context, state) => '/register',
       ),
       GoRoute(path: '/', builder: (context, state) => const HomeScreen()),
       GoRoute(
@@ -41,6 +61,10 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/settings',
         builder: (context, state) => const SettingsScreen(),
+      ),
+      GoRoute(
+        path: '/settings/admin-logs',
+        builder: (context, state) => const AdminLogsScreen(),
       ),
       GoRoute(
         path: '/profile',

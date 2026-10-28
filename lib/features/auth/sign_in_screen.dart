@@ -98,61 +98,13 @@ class _SignInScreenState extends ConsumerState<SignInScreen> {
   }
 
   Future<void> _resetPassword() async {
-    final email = _emailController.text.trim();
-    if (email.isEmpty || !email.contains('@')) {
-      setState(() {
-        _message = 'Enter your work email first to reset your password.';
-        _messageIsError = true;
-      });
-      return;
-    }
-
-    bool sent;
-    try {
-      sent = await ref
-          .read(authControllerProvider.notifier)
-          .sendPasswordReset(email);
-    } catch (_) {
-      sent = false;
-    }
     if (!mounted) return;
-    setState(() {
-      _message = sent
-          ? 'If that account exists, a password reset email has been sent.'
-          : 'We could not send a reset email. Please try again.';
-      _messageIsError = !sent;
-    });
+    context.push('/reset-password');
   }
 
   Future<void> _register() async {
-    if (!_formKey.currentState!.validate()) return;
-    FocusManager.instance.primaryFocus?.unfocus();
-    setState(() => _message = null);
-
-    bool registered;
-    Object? error;
-    try {
-      registered = await ref
-          .read(authControllerProvider.notifier)
-          .register(_emailController.text, _passwordController.text);
-    } catch (caught) {
-      registered = false;
-      error = caught;
-    }
     if (!mounted) return;
-
-    if (registered) {
-      context.go('/');
-      return;
-    }
-
-    final message = error == null
-        ? 'Registration was received. Check your email to confirm your account, then sign in.'
-        : _friendlyError(error);
-    setState(() {
-      _message = message;
-      _messageIsError = error != null;
-    });
+    context.push('/register');
   }
 
   String _friendlyError(Object? error) {
