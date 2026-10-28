@@ -24,6 +24,10 @@
 	<string>????</string>
 	<key>CFBundleVersion</key>
 	<string>$(FLUTTER_BUILD_NUMBER)</string>
+	<key>NSCameraUsageDescription</key>
+	<string>FiresideGroup needs camera access for PTW field photos.</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>FiresideGroup needs your location for PTW field check-ins.</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<key>UIApplicationSceneManifest</key>
