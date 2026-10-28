@@ -5,6 +5,7 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import 'models/admin_audit_log.dart';
 import 'models/fireside_application.dart';
 import 'models/health_status.dart';
 import 'models/profile_details.dart';
@@ -12,7 +13,16 @@ import 'repositories/catalogue_repository.dart';
 import 'repositories/health_repository.dart';
 import 'repositories/local_catalogue_repository.dart';
 import 'repositories/recent_apps_repository.dart';
+import 'services/admin_audit_log_service.dart';
 import 'services/profile_service.dart';
+
+final adminAuditLogServiceProvider = Provider<AdminAuditLogService>(
+  (ref) => AdminAuditLogService(),
+);
+
+final adminAuditLogsProvider = FutureProvider<List<AdminAuditLog>>((ref) {
+  return ref.watch(adminAuditLogServiceProvider).fetchLogs();
+});
 
 final profileServiceProvider = Provider<ProfileService>(
   (ref) => ProfileService(),

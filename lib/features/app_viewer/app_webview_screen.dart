@@ -12,6 +12,7 @@ import '../../core/theme/app_typography.dart';
 import '../../data/models/fireside_application.dart';
 import '../../data/models/health_status.dart';
 import '../../data/providers.dart';
+import '../../data/services/admin_audit_log_service.dart';
 import '../app_card/app_icon_map.dart';
 import '../app_card/status_indicator.dart';
 
@@ -19,6 +20,8 @@ bool usesMobileGatewayFor(String appId) => const {
   'scorecard',
   'warehouse',
   'tadhkara',
+  'bi-reporting',
+  'people-directory',
   'maintenance-tracker',
   'attendance-ptw',
   'fuel-control-system',
@@ -213,6 +216,11 @@ class _AppWebViewScreenState extends ConsumerState<AppWebViewScreen> {
   }
 
   Future<void> _buildController(FiresideApplication app) async {
+    recordAppAccessInBackground(
+      ref.read(adminAuditLogServiceProvider),
+      applicationId: app.id,
+      applicationName: app.name,
+    );
     final usesMobileGateway = usesMobileGatewayFor(app.id);
     final accessToken = usesMobileGateway
         ? Supabase.instance.client.auth.currentSession?.accessToken

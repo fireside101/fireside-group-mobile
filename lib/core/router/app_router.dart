@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import '../../../features/app_detail/app_detail_screen.dart';
 import '../../../features/app_viewer/app_webview_screen.dart';
 import '../../../features/applications/all_applications_screen.dart';
+import '../../../features/admin_logs/admin_logs_screen.dart';
 import '../../../features/auth/auth_controller.dart';
 import '../../../features/auth/sign_in_screen.dart';
 import '../../../features/home/home_screen.dart';
@@ -41,6 +42,10 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/settings',
         builder: (context, state) => const SettingsScreen(),
+      ),
+      GoRoute(
+        path: '/settings/admin-logs',
+        builder: (context, state) => const AdminLogsScreen(),
       ),
       GoRoute(
         path: '/profile',

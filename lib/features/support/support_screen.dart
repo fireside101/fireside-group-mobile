@@ -24,16 +24,14 @@ class SupportScreen extends StatelessWidget {
               children: [
                 Text(
                   'Support',
-                  style: Theme.of(context).textTheme.headlineLarge?.copyWith(
-                        fontWeight: FontWeight.w700,
-                      ),
+                  style: Theme.of(context).textTheme.headlineLarge
+                      ?.copyWith(fontWeight: FontWeight.w700),
                 ),
                 const SizedBox(height: 6),
                 Text(
                   'Find answers and reach the team when something is not working.',
-                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                        color: colors.muted,
-                      ),
+                  style: Theme.of(context).textTheme.bodyMedium
+                      ?.copyWith(color: colors.muted),
                 ),
                 const SizedBox(height: 20),
                 const SupportSection(),
@@ -41,13 +39,13 @@ class SupportScreen extends StatelessWidget {
                 const _SupportCard(
                   icon: LucideIcons.clock,
                   title: 'Business hours',
-                  body: 'Monday to Friday, 08:00 – 17:00 EAT.',
+                  body: 'Monday to Friday, 08:00 – 17:00 EAT. Saturday, 08:00 – 13:00 EAT.',
                 ),
                 const SizedBox(height: 12),
                 const _SupportCard(
                   icon: LucideIcons.timer,
                   title: 'Response time',
-                  body: 'Most requests are answered within one business day.',
+                  body: 'Support requests are answered within an hour.',
                 ),
                 const SizedBox(height: 12),
                 const _SupportCard(
@@ -105,16 +103,14 @@ class _SupportCard extends StatelessWidget {
               children: [
                 Text(
                   title,
-                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.w700,
-                      ),
+                  style: Theme.of(context).textTheme.titleMedium
+                      ?.copyWith(fontWeight: FontWeight.w700),
                 ),
                 const SizedBox(height: 4),
                 Text(
                   body,
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: colors.muted,
-                      ),
+                  style: Theme.of(context).textTheme.bodySmall
+                      ?.copyWith(color: colors.muted),
                 ),
               ],
             ),

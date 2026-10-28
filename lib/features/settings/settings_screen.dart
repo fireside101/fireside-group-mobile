@@ -5,6 +5,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_theme.dart';
+import '../../data/services/admin_audit_log_service.dart';
 import '../auth/auth_controller.dart';
 import '../shell/app_bottom_nav.dart';
 import '../shell/app_header.dart';
@@ -17,6 +18,8 @@ class SettingsScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final colors = context.appColors;
     final palette = ref.watch(themePaletteProvider);
+    final session = ref.watch(authControllerProvider).value;
+    final canViewAdminLogs = isPortalAdmin(session?.email);
 
     return Scaffold(
       backgroundColor: colors.ivory,
@@ -29,9 +32,8 @@ class SettingsScreen extends ConsumerWidget {
               children: [
                 Text(
                   'Settings',
-                  style: Theme.of(context).textTheme.headlineLarge?.copyWith(
-                        fontWeight: FontWeight.w700,
-                      ),
+                  style: Theme.of(context).textTheme.headlineLarge
+                      ?.copyWith(fontWeight: FontWeight.w700),
                 ),
                 const SizedBox(height: 20),
                 _SettingsCard(
@@ -56,6 +58,29 @@ class SettingsScreen extends ConsumerWidget {
                   ),
                 ),
                 const SizedBox(height: 12),
+                if (canViewAdminLogs) ...[
+                  _SettingsCard(
+                    icon: LucideIcons.shieldCheck,
+                    title: 'Administration',
+                    child: ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      leading: Icon(
+                        LucideIcons.fileClock,
+                        color: colors.accent,
+                      ),
+                      title: const Text('Audit logs'),
+                      subtitle: const Text(
+                        'Review application access and sign-in activity',
+                      ),
+                      trailing: Icon(
+                        LucideIcons.chevronRight,
+                        color: colors.muted,
+                      ),
+                      onTap: () => context.push('/settings/admin-logs'),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                ],
                 _SettingsCard(
                   icon: LucideIcons.logOut,
                   title: 'Account',
@@ -64,9 +89,7 @@ class SettingsScreen extends ConsumerWidget {
                     leading: Icon(LucideIcons.logOut, color: colors.statusBad),
                     title: Text(
                       'Sign out',
-                      style: Theme.of(context)
-                          .textTheme
-                          .bodyLarge
+                      style: Theme.of(context).textTheme.bodyLarge
                           ?.copyWith(color: colors.statusBad),
                     ),
                     onTap: () => _signOut(context, ref),
@@ -150,9 +173,8 @@ class _SettingsCard extends StatelessWidget {
               const SizedBox(width: 10),
               Text(
                 title,
-                style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.w700,
-                    ),
+                style: Theme.of(context).textTheme.titleMedium
+                    ?.copyWith(fontWeight: FontWeight.w700),
               ),
             ],
           ),
