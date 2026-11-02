@@ -114,8 +114,47 @@ not host or deploy the web app.
 The Android app checks the latest non-draft, non-prerelease GitHub Release after
 startup without blocking the UI. Settings also has “Check for updates”. The
 checker compares numeric `versionCode`, validates that the APK URL is an HTTPS
-download URL from the configured GitHub repository, and opens that URL in the
-external browser. Installation remains an explicit Android user action.
+download URL from the configured GitHub repository, downloads the APK into
+app-private storage, validates its size/SHA-256 when supplied, and opens
+Android’s package installer through a `FileProvider` content URI. The installer
+confirmation remains an explicit Android user action. Older `update.json`
+files without `apkSize` or `apkSha256` remain supported, with a non-empty-file
+check as the compatibility fallback.
+
+Existing users must first install one release containing this updater through
+the current distribution method (for example, the browser/manual APK flow).
+Only after that bootstrap release can future APKs be downloaded from inside
+the app. Android may ask the user to enable “Allow from this source” for
+Fireside Group; the app explains this, opens the app-specific settings page,
+and resumes installation with the cached APK when the user returns.
+
+Release checklist:
+
+1. Increase both the version name and numeric build number in `pubspec.yaml`.
+   Every production APK must have a higher `versionCode`, and must be signed
+   with the existing production key.
+2. Push `main`, then push the matching tag (for example `v1.0.3`). The tagged
+   workflow builds the signed APK and generates `update.json` with APK size and
+   SHA-256 metadata before publishing the GitHub Release.
+3. Do not rotate or replace the production keystore. Android will reject an
+   update signed by a different key, and the application ID must remain
+   `com.firesideafrica.firesidegroup`.
+
+Real-device update test checklist:
+
+- Install the bootstrap release and sign in; confirm existing local/user data
+  is still present after the upgrade.
+- Publish a higher-version release and check for it from Settings.
+- Start an update, verify progress, cancel it, then retry; confirm retry does
+  not use a partial `.part` file.
+- Interrupt the network or terminate the app during download; retry and verify
+  a complete APK is downloaded and validated.
+- When prompted, deny “Allow from this source”, return to the app, and verify
+  the update is not claimed as installed and can be retried.
+- Allow the permission, return to the app, tap Continue installation, cancel
+  Android’s installer confirmation, and verify retry reuses the completed APK.
+- Accept Android’s installer confirmation and verify the new version launches,
+  the app ID/signature permit an in-place upgrade, and user data is preserved.
 
 The default update source is the public repository
 `fireside101/fireside-group-mobile`. No GitHub token is embedded in the app.

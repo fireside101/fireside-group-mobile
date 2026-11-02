@@ -169,6 +169,7 @@ jobs:
             --tag "$GITHUB_REF_NAME" \
             --repository "$GITHUB_REPOSITORY" \
             --apk-name "$apk_name" \
+            --apk-path "build/app/outputs/flutter-apk/$apk_name" \
             --release-notes-file "$RUNNER_TEMP/release-notes.txt"
 
       - name: Upload release metadata artifact

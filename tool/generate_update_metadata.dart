@@ -1,6 +1,8 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:crypto/crypto.dart';
+
 void main(List<String> args) {
   final options = _parseOptions(args);
   final tag = options['tag'];
@@ -8,12 +10,13 @@ void main(List<String> args) {
   final apkName = options['apk-name'];
   final output = options['output'] ?? 'update.json';
   final notesFile = options['release-notes-file'];
+  final apkPath = options['apk-path'];
 
   if (tag == null || repository == null || apkName == null) {
     stderr.writeln(
       'Usage: dart run tool/generate_update_metadata.dart '
       '--tag v1.0.1 --repository owner/name --apk-name app.apk '
-      '[--release-notes-file file] [--output update.json]',
+      '[--release-notes-file file] [--apk-path file] [--output update.json]',
     );
     exitCode = 64;
     return;
@@ -58,6 +61,16 @@ void main(List<String> args) {
     'releaseNotes': notes.isEmpty ? 'Fireside Group $versionName' : notes,
     'apkUrl': apkUrl,
   };
+  if (apkPath != null) {
+    final apk = File(apkPath);
+    if (!apk.existsSync()) {
+      stderr.writeln('APK path does not exist: $apkPath');
+      exitCode = 1;
+      return;
+    }
+    metadata['apkSize'] = apk.lengthSync();
+    metadata['apkSha256'] = sha256.convert(apk.readAsBytesSync()).toString();
+  }
   File(output).writeAsStringSync(
     '${const JsonEncoder.withIndent('  ').convert(metadata)}\n',
   );
