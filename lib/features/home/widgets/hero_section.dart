@@ -4,6 +4,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_typography.dart';
+import '../../../data/providers.dart';
 import '../../auth/auth_controller.dart';
 import '../widgets/search_bar.dart';
 
@@ -22,11 +23,24 @@ class HeroSection extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final colors = context.appColors;
-    final name = ref.watch(authControllerProvider).value?.name;
-    final firstName = name?.split(' ').first;
-    final greeting = firstName == null || firstName.isEmpty
+    final sessionName = ref.watch(authControllerProvider).value?.name;
+    final profileName = ref
+        .watch(profileCacheProvider)
+        .value
+        ?.details
+        ?.editable;
+    final profileFirstName = profileName?.firstName.trim() ?? '';
+    final profileLastName = profileName?.lastName.trim() ?? '';
+    final fallbackName = (sessionName ?? '').trim();
+    final greetingName = profileFirstName.isNotEmpty
+        ? [
+            profileFirstName,
+            profileLastName,
+          ].where((part) => part.isNotEmpty).join(' ')
+        : fallbackName.split(RegExp(r'\s+')).take(2).join(' ');
+    final greeting = greetingName.isEmpty
         ? 'Welcome back.'
-        : 'Welcome back, $firstName.';
+        : 'Welcome back, $greetingName.';
     return Container(
       margin: const EdgeInsets.fromLTRB(16, 16, 16, 4),
       padding: const EdgeInsets.fromLTRB(20, 32, 20, 32),
