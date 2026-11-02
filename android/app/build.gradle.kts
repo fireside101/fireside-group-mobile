@@ -4,6 +4,14 @@ plugins {
     id("dev.flutter.flutter-gradle-plugin")
 }
 
+import java.util.Properties
+
+val signingPropertiesFile = rootProject.file("key.properties")
+val signingProperties = Properties()
+if (signingPropertiesFile.exists()) {
+    signingPropertiesFile.inputStream().use(signingProperties::load)
+}
+
 android {
     namespace = "com.firesideafrica.fireside_group"
     compileSdk = flutter.compileSdkVersion
@@ -31,9 +39,18 @@ android {
 
     buildTypes {
         release {
-            // TODO: Add your own signing config for the release build.
-            // Signing with the debug keys for now, so `flutter run --release` works.
-            signingConfig = signingConfigs.getByName("debug")
+            // Local builds retain the debug signing fallback. CI restores
+            // key.properties from GitHub Actions secrets for production builds.
+            signingConfig = if (signingPropertiesFile.exists()) {
+                signingConfigs.create("production") {
+                    keyAlias = signingProperties.getProperty("keyAlias")
+                    keyPassword = signingProperties.getProperty("keyPassword")
+                    storeFile = signingProperties.getProperty("storeFile")?.let(::file)
+                    storePassword = signingProperties.getProperty("storePassword")
+                }
+            } else {
+                signingConfigs.getByName("debug")
+            }
         }
     }
 }

@@ -1,0 +1,236 @@
+name: Flutter
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+concurrency:
+  group: flutter-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  FLUTTER_VERSION: '3.47.4'
+
+jobs:
+  checks:
+    name: Analyze and test
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - name: Verify Flutter SDK
+        run: flutter --version
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Generate Dart sources
+        run: dart run build_runner build --delete-conflicting-outputs
+
+      - name: Analyze
+        run: flutter analyze
+
+      - name: Run tests
+        run: flutter test
+
+  build:
+    name: Build APK and web artifacts
+    if: github.event_name != 'pull_request'
+    needs: checks
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - name: Verify Flutter SDK
+        run: flutter --version
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Generate Dart sources
+        run: dart run build_runner build --delete-conflicting-outputs
+
+      - name: Validate tagged-release version
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          dart run tool/generate_update_metadata.dart \
+            --tag "$GITHUB_REF_NAME" \
+            --repository "$GITHUB_REPOSITORY" \
+            --apk-name version-validation.apk \
+            --output "$RUNNER_TEMP/version-validation.json"
+
+      - name: Validate tagged-release signing configuration
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+        run: |
+          missing=()
+          [[ -n "$ANDROID_KEYSTORE_BASE64" ]] || missing+=(ANDROID_KEYSTORE_BASE64)
+          [[ -n "$ANDROID_KEYSTORE_PASSWORD" ]] || missing+=(ANDROID_KEYSTORE_PASSWORD)
+          [[ -n "$ANDROID_KEY_PASSWORD" ]] || missing+=(ANDROID_KEY_PASSWORD)
+          [[ -n "$ANDROID_KEY_ALIAS" ]] || missing+=(ANDROID_KEY_ALIAS)
+          if (( ${#missing[@]} > 0 )); then
+            echo "Missing required Android signing secret(s): ${missing[*]}"
+            echo "Tagged releases cannot fall back to debug signing."
+            exit 1
+          fi
+
+      - name: Restore Android signing configuration
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+        run: |
+          if [[ -n "$ANDROID_KEYSTORE_BASE64$ANDROID_KEYSTORE_PASSWORD$ANDROID_KEY_PASSWORD$ANDROID_KEY_ALIAS" ]]; then
+            if ! [[ -n "$ANDROID_KEYSTORE_BASE64" && -n "$ANDROID_KEYSTORE_PASSWORD" && -n "$ANDROID_KEY_PASSWORD" && -n "$ANDROID_KEY_ALIAS" ]]; then
+              echo "Android signing secrets are partially configured. Provide all four or none."
+              exit 1
+            fi
+            umask 077
+            base64 --decode <<< "$ANDROID_KEYSTORE_BASE64" > "$RUNNER_TEMP/fireside-release.keystore"
+            printf '%s\n' \
+              "storeFile=$RUNNER_TEMP/fireside-release.keystore" \
+              "storePassword=$ANDROID_KEYSTORE_PASSWORD" \
+              "keyPassword=$ANDROID_KEY_PASSWORD" \
+              "keyAlias=$ANDROID_KEY_ALIAS" > android/key.properties
+          fi
+
+      - name: Build Android APK
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+          PORTAL_API_BASE_URL: ${{ secrets.PORTAL_API_BASE_URL }}
+        run: |
+          flutter build apk --release \
+            --dart-define=SUPABASE_URL="$SUPABASE_URL" \
+            --dart-define=SUPABASE_ANON_KEY="$SUPABASE_ANON_KEY" \
+            --dart-define=PORTAL_API_BASE_URL="$PORTAL_API_BASE_URL"
+          apk_name="fireside-group-${GITHUB_REF_NAME}.apk"
+          cp build/app/outputs/flutter-apk/app-release.apk "build/app/outputs/flutter-apk/$apk_name"
+          echo "apk_name=$apk_name" >> "$GITHUB_ENV"
+
+      - name: Verify tagged APK is signed
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          apksigner=$(find "$ANDROID_HOME/build-tools" -name apksigner -type f | sort -V | tail -n 1)
+          [[ -n "$apksigner" ]] || { echo "Android apksigner was not found"; exit 1; }
+          "$apksigner" verify "build/app/outputs/flutter-apk/$apk_name"
+
+      # Keep this directly after the APK build so a later web failure does not
+      # prevent the APK from being retained by Actions.
+      - name: Upload Android APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: fireside-group-android-${{ github.sha }}
+          path: build/app/outputs/flutter-apk/${{ env.apk_name }}
+          if-no-files-found: error
+
+      - name: Generate release update metadata
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          git log -1 --pretty=%B > "$RUNNER_TEMP/release-notes.txt"
+          dart run tool/generate_update_metadata.dart \
+            --tag "$GITHUB_REF_NAME" \
+            --repository "$GITHUB_REPOSITORY" \
+            --apk-name "$apk_name" \
+            --release-notes-file "$RUNNER_TEMP/release-notes.txt"
+
+      - name: Upload release metadata artifact
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: actions/upload-artifact@v4
+        with:
+          name: fireside-group-release-metadata-${{ github.sha }}
+          path: update.json
+          if-no-files-found: error
+
+      - name: Build Flutter web
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+          PORTAL_API_BASE_URL: ${{ secrets.PORTAL_API_BASE_URL }}
+        run: |
+          flutter build web --release \
+            --dart-define=SUPABASE_URL="$SUPABASE_URL" \
+            --dart-define=SUPABASE_ANON_KEY="$SUPABASE_ANON_KEY" \
+            --dart-define=PORTAL_API_BASE_URL="$PORTAL_API_BASE_URL"
+
+      - name: Upload web artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: fireside-group-web-${{ github.sha }}
+          path: build/web
+          if-no-files-found: error
+
+      - name: Remove temporary signing files
+        if: always()
+        run: rm -f android/key.properties "$RUNNER_TEMP/fireside-release.keystore"
+
+  release:
+    name: Publish GitHub Release
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    needs:
+      - checks
+      - build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download Android APK artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: fireside-group-android-${{ github.sha }}
+          path: release
+
+      - name: Download update metadata artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: fireside-group-release-metadata-${{ github.sha }}
+          path: release
+
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" \
+            --repo "$GITHUB_REPOSITORY" \
+            --verify-tag \
+            --title "Fireside Group $GITHUB_REF_NAME" \
+            --generate-notes \
+            release/*.apk release/update.json

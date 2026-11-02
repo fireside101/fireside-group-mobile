@@ -1,6 +1,6 @@
 {
-    "name": "fireside_group",
-    "short_name": "fireside_group",
+    "name": "Fireside Group",
+    "short_name": "Fireside Group",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#0175C2",

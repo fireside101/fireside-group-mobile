@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -6,6 +7,8 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_theme.dart';
 import '../../data/services/admin_audit_log_service.dart';
+import '../../data/providers.dart';
+import 'app_update_prompt.dart';
 import '../auth/auth_controller.dart';
 import '../shell/app_bottom_nav.dart';
 import '../shell/app_header.dart';
@@ -20,6 +23,8 @@ class SettingsScreen extends ConsumerWidget {
     final palette = ref.watch(themePaletteProvider);
     final session = ref.watch(authControllerProvider).value;
     final canViewAdminLogs = isPortalAdmin(session?.email);
+    final canCheckForUpdates =
+        !kIsWeb && defaultTargetPlatform == TargetPlatform.android;
 
     return Scaffold(
       backgroundColor: colors.ivory,
@@ -81,6 +86,23 @@ class SettingsScreen extends ConsumerWidget {
                   ),
                   const SizedBox(height: 12),
                 ],
+                if (canCheckForUpdates) ...[
+                  _SettingsCard(
+                    icon: LucideIcons.download,
+                    title: 'Application',
+                    child: ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      leading: Icon(
+                        LucideIcons.refreshCw,
+                        color: colors.accent,
+                      ),
+                      title: const Text('Check for updates'),
+                      subtitle: const Text('Check the latest Android release'),
+                      onTap: () => _checkForUpdates(context, ref),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                ],
                 _SettingsCard(
                   icon: LucideIcons.logOut,
                   title: 'Account',
@@ -112,6 +134,18 @@ class SettingsScreen extends ConsumerWidget {
     await ref.read(authControllerProvider.notifier).signOut();
     if (!context.mounted) return;
     context.go('/sign-in');
+  }
+
+  Future<void> _checkForUpdates(BuildContext context, WidgetRef ref) async {
+    final service = ref.read(appUpdateServiceProvider);
+    final result = await service.checkForUpdate();
+    if (!context.mounted) return;
+    final metadata = result.metadata;
+    if (metadata != null && service.shouldPrompt(metadata)) {
+      await showAppUpdatePrompt(context, metadata, service);
+      return;
+    }
+    ScaffoldMessenger.of(context).showSnackBar(updateCheckSnackBar(result));
   }
 }
 

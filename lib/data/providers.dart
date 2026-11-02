@@ -15,6 +15,11 @@ import 'repositories/local_catalogue_repository.dart';
 import 'repositories/recent_apps_repository.dart';
 import 'services/admin_audit_log_service.dart';
 import 'services/profile_service.dart';
+import 'services/app_update_service.dart';
+
+final appUpdateServiceProvider = Provider<AppUpdateService>(
+  (ref) => AppUpdateService(),
+);
 
 final adminAuditLogServiceProvider = Provider<AdminAuditLogService>(
   (ref) => AdminAuditLogService(),

@@ -55,6 +55,83 @@ Without these defines, the app starts in a safe unconfigured state and the
 login card explains how to configure sign-in. The mobile app does not contain
 or require a service-role key.
 
+### GitHub Actions Android releases and in-app updates
+
+The repository remote is `fireside101/fireside-group-mobile`. The workflow in
+`.github/workflows/flutter.yml` checks pull requests, builds APK and web
+artifacts for pushes to `main` and manual runs, and publishes a GitHub Release
+only for a pushed tag matching the version in `pubspec.yaml`.
+
+Before publishing Android releases, add these GitHub Actions repository secrets:
+
+| Secret | Value |
+| --- | --- |
+| `ANDROID_KEYSTORE_BASE64` | Base64 encoding of the production `.jks`/`.keystore` file |
+| `ANDROID_KEYSTORE_PASSWORD` | Keystore password |
+| `ANDROID_KEY_PASSWORD` | Password for the release key entry |
+| `ANDROID_KEY_ALIAS` | Alias of the release key entry |
+
+The current project had no production signing identity configured; its local
+release fallback uses the Android debug key. Generate or obtain one production
+keystore, keep an encrypted offline backup, and never replace it for updates.
+The keystore identity must remain the same for every APK update so Android can
+install the update over the previous version. To create the base64 value on
+Linux or macOS:
+
+```bash
+base64 -w 0 path/to/fireside-release.keystore
+```
+
+On macOS versions where `-w` is unavailable:
+
+```bash
+base64 path/to/fireside-release.keystore | tr -d '\n'
+```
+
+The workflow restores a temporary `android/key.properties` and keystore only
+inside the runner. They are ignored by Git and removed after the job. Tagged
+builds fail before compilation when any signing secret is missing; they never
+fall back to debug signing. Local development builds remain unchanged.
+
+For each release, increase the build number in `pubspec.yaml`, commit it, and
+ensure the tag exactly matches the version name:
+
+```yaml
+version: 1.0.1+2
+```
+
+```bash
+git tag v1.0.1
+git push origin main
+git push origin v1.0.1
+```
+
+The tag workflow validates `v1.0.1` against `version: 1.0.1+2`, builds the
+production-signed APK, generates `update.json`, and attaches both files to the
+GitHub Release. It also preserves the web build as an Actions artifact; it does
+not host or deploy the web app.
+
+The Android app checks the latest non-draft, non-prerelease GitHub Release after
+startup without blocking the UI. Settings also has “Check for updates”. The
+checker compares numeric `versionCode`, validates that the APK URL is an HTTPS
+download URL from the configured GitHub repository, and opens that URL in the
+external browser. Installation remains an explicit Android user action.
+
+The default update source is the public repository
+`fireside101/fireside-group-mobile`. No GitHub token is embedded in the app.
+If releases are kept in a separate public repository, build the app with:
+
+```bash
+flutter build apk --release \
+  --dart-define=UPDATE_REPOSITORY_OWNER=your-owner \
+  --dart-define=UPDATE_REPOSITORY_NAME=your-public-release-repository
+```
+
+Private GitHub releases cannot be read by the unauthenticated mobile client;
+the checker will fail quietly and the app will continue to work. Do not make a
+repository public solely for this feature; use a separately configured public
+release repository only if that distribution model is acceptable.
+
 Profile details and profile pictures are synchronized through the web portal's
 authenticated `/api/profile` endpoints. Deploy the web portal API changes
 before testing profile edits from mobile.
