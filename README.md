@@ -112,14 +112,22 @@ GitHub Release. It also preserves the web build as an Actions artifact; it does
 not host or deploy the web app.
 
 The Android app checks the latest non-draft, non-prerelease GitHub Release after
-startup without blocking the UI. Settings also has “Check for updates”. The
-checker compares numeric `versionCode`, validates that the APK URL is an HTTPS
-download URL from the configured GitHub repository, downloads the APK into
-app-private storage, validates its size/SHA-256 when supplied, and opens
-Android’s package installer through a `FileProvider` content URI. The installer
-confirmation remains an explicit Android user action. Older `update.json`
+startup and whenever it resumes, with a 15-minute automatic-check cooldown and
+overlap protection. Settings also has “Check for updates”; a manual check is
+always allowed to reopen a deferred update. The checker compares numeric
+`versionCode`, validates that the APK URL is an HTTPS download URL from the
+configured GitHub repository, and automatically starts downloading a newer APK
+into app-private storage as soon as the update dialog appears. Progress,
+cancellation, retry, and failures are visible. The APK is validated by size and
+SHA-256 when supplied, then Android’s package installer is opened through a
+`FileProvider` content URI only after the user taps Install. Older `update.json`
 files without `apkSize` or `apkSha256` remain supported, with a non-empty-file
 check as the compatibility fallback.
+
+Downloads are intentionally foreground/in-app work rather than a background
+download service. If Android suspends or kills the app while it is backgrounded,
+the partial file is never installed; returning to Fireside allows the download
+to be retried and the resume check is cooldown/defer protected.
 
 Existing users must first install one release containing this updater through
 the current distribution method (for example, the browser/manual APK flow).
@@ -145,6 +153,9 @@ Real-device update test checklist:
 - Install the bootstrap release and sign in; confirm existing local/user data
   is still present after the upgrade.
 - Publish a higher-version release and check for it from Settings.
+- With the app left open in the background, publish a higher-version release,
+  return to Fireside, and verify the resume check detects it and starts the
+  in-app download automatically.
 - Start an update, verify progress, cancel it, then retry; confirm retry does
   not use a partial `.part` file.
 - Interrupt the network or terminate the app during download; retry and verify

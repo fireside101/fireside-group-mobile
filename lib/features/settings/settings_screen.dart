@@ -138,11 +138,11 @@ class SettingsScreen extends ConsumerWidget {
 
   Future<void> _checkForUpdates(BuildContext context, WidgetRef ref) async {
     final service = ref.read(appUpdateServiceProvider);
-    final result = await service.checkForUpdate();
+    final result = await service.checkForUpdate(force: true);
     if (!context.mounted) return;
     final metadata = result.metadata;
-    if (metadata != null && service.shouldPrompt(metadata)) {
-      await showAppUpdatePrompt(context, metadata, service);
+    if (metadata != null && service.shouldPrompt(metadata, manual: true)) {
+      await showAppUpdatePrompt(context, metadata, service, automatic: false);
       return;
     }
     ScaffoldMessenger.of(context).showSnackBar(updateCheckSnackBar(result));

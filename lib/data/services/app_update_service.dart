@@ -78,27 +78,50 @@ class UpdateCancelled implements Exception {
 }
 
 class AppUpdateService {
-  AppUpdateService({http.Client? client, this._packageInfo, this.config = const AppUpdateConfig(), this._androidOverride, this._storageDirectory, MethodChannel? platformChannel}) : _client = client ?? http.Client(), _platformChannel = platformChannel ?? const MethodChannel('fireside_group/app_updates');
+  AppUpdateService({http.Client? client, this.packageInfo, this.config = const AppUpdateConfig(), this._androidOverride, this._storageDirectory, MethodChannel? platformChannel}) : _client = client ?? http.Client(), _platformChannel = platformChannel ?? const MethodChannel('fireside_group/app_updates');
   static const _timeout = Duration(seconds: 8);
+  static const automaticCheckCooldown = Duration(minutes: 15);
   final http.Client _client;
-  final PackageInfo? _packageInfo;
+  final PackageInfo? packageInfo;
   final AppUpdateConfig config;
   final bool? _androidOverride;
   final Directory? _storageDirectory;
   final MethodChannel _platformChannel;
-  int? _promptedVersionCode;
+  Future<AppUpdateCheckResult>? _checkInFlight;
+  DateTime? _lastAutomaticCheck;
+  AppUpdateCheckResult? _lastAutomaticResult;
+  int? _deferredVersionCode;
   StreamSubscription<List<int>>? _downloadSubscription;
+  IOSink? _downloadSink;
+  Completer<void>? _downloadCompleter;
   bool _downloadInProgress = false;
   bool _cancelRequested = false;
   UpdateState state = UpdateState.idle;
 
   bool get _isAndroid => _androidOverride ?? defaultTargetPlatform == TargetPlatform.android;
 
-  Future<AppUpdateCheckResult> checkForUpdate() async {
+  Future<AppUpdateCheckResult> checkForUpdate({bool automatic = false, bool force = false}) {
+    final inFlight = _checkInFlight;
+    if (inFlight != null) return inFlight;
+    final now = DateTime.now();
+    if (automatic && !force && _lastAutomaticCheck != null &&
+        now.difference(_lastAutomaticCheck!) < automaticCheckCooldown) {
+      return Future.value(_lastAutomaticResult ?? const AppUpdateCheckResult.none());
+    }
+    final request = _performUpdateCheck();
+    _checkInFlight = request;
+    if (automatic) _lastAutomaticCheck = now;
+    return request.then((result) {
+      if (automatic) _lastAutomaticResult = result;
+      return result;
+    }).whenComplete(() => _checkInFlight = null);
+  }
+
+  Future<AppUpdateCheckResult> _performUpdateCheck() async {
     if (!_isAndroid) return const AppUpdateCheckResult.none();
     try {
-      final packageInfo = _packageInfo ?? await PackageInfo.fromPlatform();
-      final installedBuild = int.tryParse(packageInfo.buildNumber);
+      final installedInfo = packageInfo ?? await PackageInfo.fromPlatform();
+      final installedBuild = int.tryParse(installedInfo.buildNumber);
       if (installedBuild == null) return const AppUpdateCheckResult.unavailable('The installed build number is unavailable.');
       final response = await _client.get(config.latestReleaseApiUri, headers: const {'Accept': 'application/vnd.github+json', 'User-Agent': 'fireside-group-mobile-updater'}).timeout(_timeout);
       if (response.statusCode == 403 || response.statusCode == 429) return const AppUpdateCheckResult.unavailable('GitHub update checks are temporarily rate limited.');
@@ -121,7 +144,19 @@ class AppUpdateService {
     } on Object { return const AppUpdateCheckResult.unavailable('Updates could not be checked while offline.'); }
   }
 
-  bool shouldPrompt(AppUpdateMetadata metadata) { if (_promptedVersionCode == metadata.versionCode) return false; _promptedVersionCode = metadata.versionCode; return true; }
+  bool shouldPrompt(AppUpdateMetadata metadata, {bool manual = false}) {
+    if (manual) {
+      _deferredVersionCode = null;
+      return true;
+    }
+    return _deferredVersionCode != metadata.versionCode;
+  }
+
+  void deferUpdate(AppUpdateMetadata metadata) {
+    _deferredVersionCode = metadata.versionCode;
+  }
+
+  bool get isDownloadInProgress => _downloadInProgress;
   Future<Directory> _directory() async => _storageDirectory ?? await getApplicationSupportDirectory();
   String _fileName(AppUpdateMetadata m) => 'fireside-update-${m.versionCode}.apk';
   Future<File> _cachedFile(AppUpdateMetadata m) async => File('${(await _directory()).path}/${_fileName(m)}');
@@ -143,35 +178,75 @@ class AppUpdateService {
     _downloadInProgress = true;
     _cancelRequested = false;
     state = UpdateState.downloading;
-    final directory = await _directory();
-    await directory.create(recursive: true);
-    final target = await _cachedFile(metadata);
-    if (await _isValid(target, metadata)) { state = UpdateState.ready; onProgress?.call(UpdateProgress(UpdateState.ready, received: await target.length(), total: metadata.apkSize)); _downloadInProgress = false; return; }
-    final temp = File('${target.path}.part');
-    try { await temp.delete(); } on FileSystemException { /* already absent */ }
+    File? temp;
     try {
+      final directory = await _directory();
+      await directory.create(recursive: true);
+      final target = await _cachedFile(metadata);
+      if (await _isValid(target, metadata)) {
+        state = UpdateState.ready;
+        onProgress?.call(UpdateProgress(UpdateState.ready, received: await target.length(), total: metadata.apkSize));
+        return;
+      }
+      final tempFile = File('${target.path}.part');
+      temp = tempFile;
+      try { await tempFile.delete(); } on FileSystemException { /* already absent */ }
       final response = await _client.send(http.Request('GET', metadata.apkUrl)).timeout(const Duration(minutes: 5));
+      if (_cancelRequested) throw const UpdateCancelled();
       if (response.statusCode != 200) throw HttpException('Download failed with HTTP ${response.statusCode}.');
       final total = metadata.apkSize ?? response.contentLength;
       var received = 0;
-      final sink = temp.openWrite();
-      _downloadSubscription = response.stream.listen((chunk) { received += chunk.length; sink.add(chunk); onProgress?.call(UpdateProgress(UpdateState.downloading, received: received, total: total)); });
-      await _downloadSubscription!.asFuture<void>();
-      await sink.close();
+      final sink = tempFile.openWrite();
+      _downloadSink = sink;
+      final completer = Completer<void>();
+      _downloadCompleter = completer;
+      _downloadSubscription = response.stream.timeout(const Duration(seconds: 30), onTimeout: (sink) {
+        sink.addError(TimeoutException('The APK download stalled.'));
+        sink.close();
+      }).listen((chunk) {
+        received += chunk.length;
+        sink.add(chunk);
+        onProgress?.call(UpdateProgress(UpdateState.downloading, received: received, total: total));
+      }, onError: (Object error, StackTrace stack) async {
+        await sink.close();
+        if (!completer.isCompleted) completer.completeError(error, stack);
+      }, onDone: () async {
+        await sink.close();
+        if (!completer.isCompleted) completer.complete();
+      }, cancelOnError: true);
+      await completer.future;
       if (_cancelRequested) throw const UpdateCancelled();
-      if (!await _isValid(temp, metadata)) throw const FormatException('The downloaded APK failed integrity validation.');
-      await temp.rename(target.path);
+      if (!await _isValid(tempFile, metadata)) throw const FormatException('The downloaded APK failed integrity validation.');
+      await tempFile.rename(target.path);
       state = UpdateState.ready;
       onProgress?.call(UpdateProgress(UpdateState.ready, received: received, total: total));
     } catch (error) {
-      try { await temp.delete(); } on FileSystemException { /* already absent */ }
+      if (temp != null) {
+        try { await temp.delete(); } on FileSystemException { /* already absent */ }
+      }
       state = UpdateState.failed;
       onProgress?.call(UpdateProgress(UpdateState.failed, message: error.toString()));
       rethrow;
-    } finally { _downloadSubscription = null; _downloadInProgress = false; }
+    } finally {
+      _downloadSubscription = null;
+      _downloadSink = null;
+      _downloadCompleter = null;
+      _downloadInProgress = false;
+    }
   }
 
-  Future<void> cancelDownload() async { _cancelRequested = true; await _downloadSubscription?.cancel(); _downloadSubscription = null; }
+  Future<void> cancelDownload() async {
+    if (!_downloadInProgress) return;
+    _cancelRequested = true;
+    final subscription = _downloadSubscription;
+    final completer = _downloadCompleter;
+    if (completer != null && !completer.isCompleted) {
+      completer.completeError(const UpdateCancelled());
+    }
+    await subscription?.cancel();
+    await _downloadSink?.close();
+    _downloadSubscription = null;
+  }
 
   Future<UpdateInstallResult> installUpdate(AppUpdateMetadata metadata) async {
     final file = await _cachedFile(metadata);
