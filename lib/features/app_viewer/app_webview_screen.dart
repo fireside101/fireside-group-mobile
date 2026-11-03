@@ -1,6 +1,9 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -60,6 +63,7 @@ class _AppWebViewScreenState extends ConsumerState<AppWebViewScreen> {
   WebViewController? _controller;
   bool _isLoading = true;
   bool _webViewCanGoBack = false;
+  final ImagePicker _imagePicker = ImagePicker();
 
   @override
   void initState() {
@@ -215,6 +219,42 @@ class _AppWebViewScreenState extends ConsumerState<AppWebViewScreen> {
     );
   }
 
+  Future<void> _captureNativeCamera(JavaScriptMessage message) async {
+    if (message.message != 'capture') return;
+
+    try {
+      final image = await _imagePicker.pickImage(
+        source: ImageSource.camera,
+        imageQuality: 78,
+        maxWidth: 1280,
+      );
+      if (image == null) {
+        await _notifyNativeCameraStatus(
+          'Camera cancelled. Tap Take Photo to try again.',
+        );
+        return;
+      }
+
+      final bytes = await image.readAsBytes();
+      final dataUrl = 'data:image/jpeg;base64,${base64Encode(bytes)}';
+      final encodedDataUrl = jsonEncode(dataUrl);
+      await _controller?.runJavaScript(
+        "window.dispatchEvent(new CustomEvent('firesideNativePhoto',{detail:$encodedDataUrl}));",
+      );
+    } catch (_) {
+      await _notifyNativeCameraStatus(
+        'The phone camera could not open. Allow camera access in the app settings and try again.',
+      );
+    }
+  }
+
+  Future<void> _notifyNativeCameraStatus(String status) async {
+    final encodedStatus = jsonEncode(status);
+    await _controller?.runJavaScript(
+      "window.dispatchEvent(new CustomEvent('firesideNativeCameraStatus',{detail:$encodedStatus}));",
+    );
+  }
+
   Future<void> _buildController(FiresideApplication app) async {
     recordAppAccessInBackground(
       ref.read(adminAuditLogServiceProvider),
@@ -237,6 +277,10 @@ class _AppWebViewScreenState extends ConsumerState<AppWebViewScreen> {
             onMessageReceived: (_) async {
               await openAppSettings();
             },
+          )
+          ..addJavaScriptChannel(
+            'FiresideGroupCamera',
+            onMessageReceived: _captureNativeCamera,
           )
           ..setNavigationDelegate(
             NavigationDelegate(
