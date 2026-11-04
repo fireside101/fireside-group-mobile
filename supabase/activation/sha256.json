@@ -1,0 +1,8 @@
+{
+  "supabase/activation/preflight.sql": "3251105c8a0cd3024ace5b0c04c6adfa90c60f50544b1f17d480935d09b6ff90",
+  "supabase/migrations/202611030001_mobile_release.sql": "35e1ce4ab085a2b7a6e3201779e56a00e3ae37a7dbd5bb64aaec873109122efb",
+  "supabase/migrations/202611040001_mobile_release_storage_authority.sql": "a752f2d099f5944bd064200db623223997ce12f77608c198ccdf66d6017cb4f5",
+  "supabase/candidates/mobile_private_delivery.sql": "f474739cd1097d34a25175c1e5c94c21194ae4477c4dcb70abb3df36ef3a7942",
+  "supabase/activation/finalize.sql": "8406e586798112cc2bcd48ce471007d1261d256c19e66403251f66f9702dd2f9",
+  "supabase/activation/verify.sql": "2b7343e04d4f29578a1a554aac6290b14270f57e94b7e4238c809ec3ba68e60b"
+}

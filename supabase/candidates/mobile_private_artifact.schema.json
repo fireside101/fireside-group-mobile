@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "mobile-private-artifact-v2",
+  "title": "mobile_release.advertise(x jsonb) private immutable payload",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["package", "version_code", "version_name", "tag", "commit", "signer_sha256", "sha256", "size", "provider", "bucket", "object_key"],
+  "properties": {
+    "package": {"const": "com.firesideafrica.firesidegroup"},
+    "version_code": {"type": "integer", "minimum": 1, "maximum": 2100000000},
+    "version_name": {"type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"},
+    "tag": {"type": "string", "pattern": "^v[0-9]+\\.[0-9]+\\.[0-9]+$"},
+    "commit": {"type": "string", "pattern": "^[a-f0-9]{40}$"},
+    "signer_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "size": {"type": "integer", "minimum": 1, "maximum": 536870912},
+    "provider": {"const": "supabase-rest"},
+    "bucket": {"const": "fireside-mobile-releases"},
+    "object_key": {"type": "string", "pattern": "^com\\.firesideafrica\\.firesidegroup/[1-9][0-9]*/[a-f0-9]{40}/[a-f0-9]{64}\\.apk$"}
+  },
+  "$comment": "SQL/route additionally enforce tag=v+version_name, exact key=package/version_code/commit/sha256.apk, reservation code/name/commit/signer and approved signer equality, monotonic floor and immutable receipt. No apk_url/download_url/expires_at/session_binding in publisher payload. Delivery adds download_url and expires_at only after fresh authorization; SDK adds local session_binding, never persisted."
+}

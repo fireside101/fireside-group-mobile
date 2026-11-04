@@ -1,0 +1,2 @@
+# Owner-side activation only; exact version exercised by this package.
+psycopg[binary]==3.3.8
