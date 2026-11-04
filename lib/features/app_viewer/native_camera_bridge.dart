@@ -1,5 +1,7 @@
 import 'dart:convert';
 
+import 'document_download.dart';
+
 Future<void> captureNativePhoto<T>({
   required Future<T?> Function() pick,
   required Future<List<int>> Function(T) read,
@@ -33,9 +35,10 @@ String nativeBridgeBootstrap(String pageUrl, String capability) =>
   const token = ${jsonEncode(capability)};
   const send = FiresideNativeTransport.postMessage.bind(FiresideNativeTransport);
   let id = 0;
-  window.FiresideGroupCamera = Object.freeze({postMessage: value => {
-    if (value === 'capture') send(JSON.stringify({token, id: ++id, action: 'capture'}));
-  }});
+  const postDownload = (action, payload) => send(JSON.stringify({...payload, token, id: ++id, action}));
+  ${documentDownloadBootstrap()}
+  // Do not install FiresideGroupCamera: its presence forces the web app into
+  // the external ACTION_IMAGE_CAPTURE path instead of its inline getUserMedia.
   window.FiresideGroupPermissions = Object.freeze({postMessage: () => {
     send(JSON.stringify({token, id: ++id, action: 'settings'}));
   }});

@@ -77,7 +77,7 @@ function context(href, subframe=false) {
  const messages=[], events=[];
  const w={dispatchEvent:e=>events.push(e)};
  w.top=subframe?{}:w;
- const ctx=vm.createContext({window:w,location:{href},FiresideNativeTransport:{postMessage:m=>messages.push(JSON.parse(m))},CustomEvent:class {constructor(type,data){this.type=type;this.detail=data.detail;}}});
+ const ctx=vm.createContext({window:w,location:{href},document:{addEventListener:()=>{}},FiresideNativeTransport:{postMessage:m=>messages.push(JSON.parse(m))},CustomEvent:class {constructor(type,data){this.type=type;this.detail=data.detail;}}});
  return {ctx,w,messages,events};
 }
 for(const [url,subframe] of [['https://evil.test/form',false],['$url',true]]) {
@@ -85,7 +85,8 @@ for(const [url,subframe] of [['https://evil.test/form',false],['$url',true]]) {
  if(c.w.FiresideGroupCamera) throw Error('untrusted document got bridge');
 }
 const c=context('$url'); vm.runInContext($bootstrap,c.ctx);
-c.w.FiresideGroupCamera.postMessage('capture');
+if(c.w.FiresideGroupCamera) throw Error('external camera override installed');
+c.w.FiresideGroupPermissions.postMessage('settings');
 if(c.messages[0].token !== 'secret-capability' || c.messages[0].id !== 1) throw Error('protocol');
 vm.runInContext($delivery,c.ctx);
 if(c.events.length) throw Error('stale photo delivered');

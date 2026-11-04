@@ -2,9 +2,10 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:image_picker/image_picker.dart';
+
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -22,6 +23,8 @@ import '../app_card/app_icon_map.dart';
 import '../app_card/status_indicator.dart';
 import 'webview_security.dart';
 import 'native_camera_bridge.dart';
+import 'trusted_camera_permission.dart';
+import 'document_download.dart';
 
 bool usesMobileGatewayFor(String appId) => const {
   'scorecard',
@@ -87,12 +90,38 @@ class _AppWebViewScreenState extends ConsumerState<AppWebViewScreen> {
   late final WebViewSecurity _security;
   StreamSubscription<AuthState>? _authSubscription;
   bool _building = false;
-  bool _cameraBusy = false;
-  String? _documentUrl;
-  final ImagePicker _imagePicker = ImagePicker();
+  static const _documentChannel = MethodChannel('fireside_group/documents');
+  late final DocumentDownloadReceiver _downloads = DocumentDownloadReceiver(
+    save: (bytes, name, mime) async {
+      final saved = await _documentChannel.invokeMethod<bool>('saveDocument', {
+        'bytes': bytes,
+        'name': name,
+        'mime': mime,
+      });
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              saved == true
+                  ? 'File saved.'
+                  : 'Save cancelled. Your submission is unchanged.',
+            ),
+          ),
+        );
+      }
+    },
+  );
+
+  void _cancelDownloads() {
+    _downloads.cancel();
+    unawaited(
+      _documentChannel.invokeMethod<void>('cancel').catchError((Object _) {}),
+    );
+  }
 
   @override
   void dispose() {
+    _cancelDownloads();
     _security.close();
     _authSubscription?.cancel();
     super.dispose();
@@ -113,6 +142,7 @@ class _AppWebViewScreenState extends ConsumerState<AppWebViewScreen> {
         return;
       }
       _security.accountChanged(event.session?.user.id);
+      _cancelDownloads();
       _security.close();
       // Redirect rather than popping a route the auth router may have replaced.
       if (mounted) context.go('/');
@@ -226,10 +256,24 @@ class _AppWebViewScreenState extends ConsumerState<AppWebViewScreen> {
     }
   }
 
-  // Camera WebView permissions lack requesting-frame origin; deny rather than
-  // granting based on the top URL. Native capture uses a top-frame capability.
-  Future<void> _handleWebViewPermission(WebViewPermissionRequest request) =>
-      request.deny();
+  Future<void> _handleWebViewPermission(
+    WebViewPermissionRequest request,
+  ) async {
+    final platform = request.platform;
+    await handleTrustedCameraPermission(
+      security: _security,
+      sourceOrigin: platform is AndroidWebViewPermissionRequest
+          ? platform.origin
+          : null,
+      cameraOnly:
+          request.types.length == 1 &&
+          request.types.contains(WebViewPermissionResourceType.camera),
+      requestRuntime: () async => (await Permission.camera.request()).isGranted,
+      isMounted: () => mounted,
+      grant: request.grant,
+      deny: request.deny,
+    );
+  }
 
   Future<void> _configureAndroidWebViewPermissions(
     WebViewController controller,
@@ -260,50 +304,38 @@ class _AppWebViewScreenState extends ConsumerState<AppWebViewScreen> {
   }
 
   Future<void> _handleNativeMessage(JavaScriptMessage message) async {
-    if (message.message.length > 512 || _cameraBusy) return;
+    if (message.message.length > 70000) return;
     try {
       final data = jsonDecode(message.message);
       if (data is! Map<String, dynamic> ||
           data['token'] is! String ||
           data['id'] is! int ||
-          !const ['capture', 'settings'].contains(data['action'])) {
+          data['action'] is! String) {
         return;
       }
       final lease = _security.authorizeBridge(
         data['token'] as String,
         data['id'] as int,
       );
-      final pageUrl = _documentUrl;
-      if (lease == null || pageUrl == null || !mounted) return;
-      if (data['action'] == 'settings') {
+      if (lease == null || !mounted) return;
+      if ((data['action'] as String).startsWith('download-')) {
+        await _downloads.receive(
+          data,
+          () => mounted && _security.isDocumentCurrent(lease),
+        );
+      } else if (data['action'] == 'settings' && _security.isCurrent(lease)) {
         await openAppSettings();
-        return;
       }
-      _cameraBusy = true;
-      await captureNativePhoto<XFile>(
-        pick: () => _imagePicker.pickImage(
-          source: ImageSource.camera,
-          imageQuality: 78,
-          maxWidth: 1280,
-        ),
-        read: (image) => image.readAsBytes(),
-        isCurrent: () => mounted && _security.isCurrent(lease),
-        deliver: (event, result) async {
-          await _controller?.runJavaScript(
-            nativeBridgeDelivery(
-              pageUrl,
-              data['token'] as String,
-              data['id'] as int,
-              event,
-              result,
-            ),
-          );
-        },
-      );
     } catch (_) {
-      // No late/error callback is injected into a possibly different document.
-    } finally {
-      _cameraBusy = false;
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Download could not be saved. Sign in and retry; files must be a supported type under 25 MB.',
+            ),
+          ),
+        );
+      }
     }
   }
 
@@ -343,6 +375,7 @@ class _AppWebViewScreenState extends ConsumerState<AppWebViewScreen> {
             return NavigationDecision.prevent;
           }
           if (request.isMainFrame) {
+            _cancelDownloads();
             _security.navigationStarted();
             final landing = tbtLandingRedirect(app.id, request.url);
             if (landing != null) {
@@ -353,7 +386,10 @@ class _AppWebViewScreenState extends ConsumerState<AppWebViewScreen> {
           }
           return NavigationDecision.navigate;
         },
-        onPageStarted: (_) => _security.navigationStarted(),
+        onPageStarted: (_) {
+          _cancelDownloads();
+          _security.navigationStarted();
+        },
         onProgress: (progress) {
           if (progress >= 100) {
             if (mounted) setState(() => _isLoading = false);
@@ -361,7 +397,7 @@ class _AppWebViewScreenState extends ConsumerState<AppWebViewScreen> {
         },
         onPageFinished: (url) {
           _security.pageFinished(url);
-          _documentUrl = url;
+
           final capability = _security.documentCapability;
           if (capability != null) {
             unawaited(

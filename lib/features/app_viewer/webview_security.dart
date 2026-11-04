@@ -29,7 +29,7 @@ class WebViewSecurity {
         requestId > 1000000) {
       return null;
     }
-    final lease = captureLease();
+    final lease = documentLease();
     if (lease == null) return null;
     _lastRequest = requestId;
     return lease;
@@ -60,7 +60,7 @@ class WebViewSecurity {
     _page = allows(url) ? url : null;
     _lastRequest = 0;
     final random = Random.secure();
-    _capability = _nativeApproved && _page != null && _account != null
+    _capability = _page != null && _account != null
         ? List.generate(
             32,
             (_) => random.nextInt(256).toRadixString(16).padLeft(2, '0'),
@@ -92,4 +92,12 @@ class WebViewSecurity {
       : null;
 
   bool isCurrent(int? lease) => lease != null && lease == captureLease();
+
+  // File handoff works for each bundled app's own origin. This does not grant
+  // camera/geolocation: those retain the narrower PTW native admission above.
+  int? documentLease() =>
+      _account != null && _page != null && !_closed ? _generation : null;
+
+  bool isDocumentCurrent(int? lease) =>
+      lease != null && lease == documentLease();
 }

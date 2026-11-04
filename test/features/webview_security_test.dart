@@ -8,7 +8,9 @@ void main() {
       final warehouse = WebViewSecurity('warehouse');
       warehouse.accountChanged('alice');
       warehouse.pageFinished('https://warehouse.firesideafrica.cloud');
-      expect(warehouse.documentCapability, isNull);
+      expect(warehouse.documentCapability, isNotNull);
+      expect(warehouse.isDocumentCurrent(warehouse.documentLease()), isTrue);
+      expect(warehouse.captureLease(), isNull);
       expect(
         warehouse.canUseNative(
           sourceOrigin: 'https://warehouse.firesideafrica.cloud',

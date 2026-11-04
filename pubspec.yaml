@@ -75,6 +75,11 @@ dependencies:
   path_provider: ^2.1.5
   workmanager: ^0.10.10
 
+dependency_overrides:
+  # Requesting-frame origin is required for secure inline WebView camera.
+  webview_flutter_android:
+    path: packages/webview_flutter_android
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
