@@ -1,0 +1,49 @@
+name: Mobile signing certificate preflight
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: flutter-main-release
+  cancel-in-progress: false
+jobs:
+  certificate:
+    if: github.repository == 'fireside101/fireside-group-mobile' && github.actor == 'josephndex' && github.triggering_actor == 'josephndex' && github.ref == 'refs/heads/main' && github.event_name == 'workflow_dispatch'
+    environment: mobile-release
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Compare public certificate only; never export a private key
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          MOBILE_PRODUCTION_SIGNER_SHA256: ${{ vars.MOBILE_PRODUCTION_SIGNER_SHA256 }}
+        run: |
+          python3 - <<'PY'
+          import base64, hashlib, json, os, pathlib, subprocess, tempfile
+          path = None
+          try:
+              fd, path = tempfile.mkstemp(prefix='signing-preflight-',dir=os.environ['RUNNER_TEMP'])
+              with os.fdopen(fd,'wb') as f:
+                  f.write(base64.b64decode(os.environ['ANDROID_KEYSTORE_BASE64'],validate=True))
+              p=subprocess.run(['keytool','-exportcert','-keystore',path,'-alias',os.environ['ANDROID_KEY_ALIAS'],
+                                '-storepass:env','ANDROID_KEYSTORE_PASSWORD'],capture_output=True,timeout=20)
+              if p.returncode or not p.stdout:
+                  raise ValueError('certificate unavailable')
+              digest=hashlib.sha256(p.stdout).hexdigest()
+              expected=os.environ['MOBILE_PRODUCTION_SIGNER_SHA256']
+              print(json.dumps({'public_certificate_sha256':digest,'expected_sha256':expected,'matches':digest==expected}))
+              if digest!=expected:
+                  raise SystemExit(1)
+          except Exception:
+              print(json.dumps({'status':'held','error':'certificate_preflight_held'}))
+              raise SystemExit(1) from None
+          finally:
+              if path:
+                  pathlib.Path(path).unlink(missing_ok=True)
+          PY
