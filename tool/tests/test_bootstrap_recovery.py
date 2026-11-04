@@ -26,6 +26,13 @@ class RecoveryTests(unittest.TestCase):
     def test_diagnostic_success_preserves_real_command_output(self):
         with patch.object(subprocess,'run',return_value=subprocess.CompletedProcess([],0,'ok','')):
             self.assertEqual(recovery.diagnostic_run(['git','rev-parse','HEAD']),'ok')
+    def test_recovery_workflow_has_protected_ca_and_exact_artifact(self):
+        text=(Path(__file__).resolve().parents[2]/'.github/workflows/mobile-bootstrap-recovery.yml').read_text()
+        self.assertIn('MOBILE_REGISTRY_CA_PEM: ${{ vars.MOBILE_REGISTRY_CA_PEM }}',text)
+        self.assertIn('run-id: 41851122318',text)
+        self.assertIn('actions: read',text)
+        self.assertIn('contents: write',text)
+
     def test_retained_identity_is_frozen(self):
         self.assertEqual(recovery.SOURCE,'cd65ca3be70fbab17e9b492fa1aa9a47c4742418')
         self.assertEqual(recovery.SHA,'d177f653c3dbc60057577336c6dd47c0babcea2e88344d79e4b57e4b0f4f0de6')

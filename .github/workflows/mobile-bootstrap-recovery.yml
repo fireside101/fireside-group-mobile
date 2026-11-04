@@ -75,6 +75,7 @@ jobs:
         AWS_EC2_METADATA_DISABLED: 'true'
         MOBILE_REGISTRY_CONTRACT: ${{ vars.MOBILE_REGISTRY_CONTRACT }}
         MOBILE_REGISTRY_DSN: ${{ secrets.MOBILE_REGISTRY_DSN }}
+        MOBILE_REGISTRY_CA_PEM: ${{ vars.MOBILE_REGISTRY_CA_PEM }}
       run: 'tools=$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type
         d | sort -V | tail -n 1)
 
