@@ -10,6 +10,7 @@ from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import mobile_release as r
+from test_github_draft_lookup import GithubAPI
 
 class AdapterTests(unittest.TestCase):
     def setUp(self): self.spec = r.Spec('1.0.5', 6, 'b'*40, 'a'*64)
@@ -126,34 +127,38 @@ class AdapterTests(unittest.TestCase):
             with self.assertRaises(r.Held): gh.ensure(self.spec,b'apk',{})
             command.assert_not_called()
     def test_github_existing_exact_assets_rerun_and_conflict(self):
-        gh=r.GithubRelease()
-        cp=subprocess.CompletedProcess([],0,'{}','')
-        with patch.object(gh,'tag_commit',return_value=self.spec.commit), patch.object(r.subprocess,'run',return_value=cp), patch.object(r,'run',return_value='{"draft":true,"prerelease":false}'), patch.object(gh,'_download',side_effect=[b'apk',b'{}']):
+        gh=r.GithubRelease(); api=GithubAPI(self.spec)
+        with patch.object(r.subprocess, 'run', side_effect=api):
             gh.ensure(self.spec,b'apk',{})
-        with patch.object(gh,'tag_commit',return_value=self.spec.commit), patch.object(r.subprocess,'run',return_value=cp), patch.object(r,'run',return_value='{"draft":true,"prerelease":false}'), patch.object(gh,'_download',return_value=b'wrong'):
+            gh.ensure(self.spec,b'apk',{})
+            api.apk = b'wrong'
             with self.assertRaises(r.Held): gh.ensure(self.spec,b'apk',{})
+        self.assertFalse(api.writes())
+
     def test_new_github_release_is_draft_not_latest_until_activation(self):
-        gh=r.GithubRelease()
-        cp=subprocess.CompletedProcess([],1,'','HTTP 404')
-        info=json.dumps({'draft':True,'prerelease':False,'target_commitish':self.spec.commit})
-        with patch.object(gh,'tag_commit',return_value=None), patch.object(r.subprocess,'run',return_value=cp), patch.object(r,'run',side_effect=['',info]) as commands, patch.object(gh,'_download',side_effect=[b'apk',b'{}']):
+        gh=r.GithubRelease(); api=GithubAPI(self.spec, exists=False)
+        with patch.object(r.subprocess, 'run', side_effect=api):
             gh.ensure(self.spec,b'apk',{})
-            created=commands.call_args_list[0].args[0]
+            created=api.writes()[0]
             self.assertIn('--draft',created)
             self.assertIn('--latest=false',created)
-        public=json.dumps({'draft':False,'prerelease':False})
-        with patch.object(gh,'tag_commit',return_value=self.spec.commit), patch.object(r.subprocess,'run',return_value=subprocess.CompletedProcess([],0,'{}','')), patch.object(r,'run',return_value=public):
-            with self.assertRaises(r.Held): gh.ensure(self.spec,b'apk',{})
+        public=GithubAPI(self.spec); public.info.update(draft=False, prerelease=False)
+        with patch.object(r.subprocess, 'run', side_effect=public):
+            with self.assertRaises(r.Held): r.GithubRelease().ensure(self.spec,b'apk',{})
 
     def test_activation_checks_exact_latest_and_source_readback(self):
-        gh=r.GithubRelease()
-        draft=json.dumps({'draft':True,'target_commitish':self.spec.commit})
-        latest=json.dumps({'tag_name':self.spec.tag,'draft':False,'prerelease':False})
-        with patch.object(gh,'tag_commit',side_effect=[None,self.spec.commit]), patch.object(r,'run',side_effect=[draft,'',latest]) as commands:
+        gh=r.GithubRelease(); api=GithubAPI(self.spec)
+        with patch.object(r.subprocess, 'run', side_effect=api):
             gh.activate(self.spec)
-            self.assertIn('--latest=true',commands.call_args_list[1].args[0])
-        with patch.object(gh,'tag_commit',side_effect=[None,self.spec.commit]), patch.object(r,'run',side_effect=[draft,'','{"tag_name":"wrong","draft":false,"prerelease":false}']):
-            with self.assertRaises(r.Held): gh.activate(self.spec)
+        self.assertIn('--latest=true',api.writes()[0])
+        api=GithubAPI(self.spec)
+        def wrong_latest(args, **kwargs):
+            result = api(args, **kwargs)
+            if args[-1].endswith('/releases/latest'):
+                result.stdout = json.dumps(dict(api.info, tag_name='wrong'))
+            return result
+        with patch.object(r.subprocess, 'run', side_effect=wrong_latest):
+            with self.assertRaises(r.Held): r.GithubRelease().activate(self.spec)
 
     def test_cli_missing_configuration_is_held_without_secret_output(self):
         script = Path(__file__).resolve().parents[1] / 'mobile_release.py'

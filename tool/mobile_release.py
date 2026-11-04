@@ -211,6 +211,69 @@ class GithubRelease:
     def __init__(self, *, public_bootstrap_approved=False):
         require(type(public_bootstrap_approved) is bool, 'invalid public bootstrap approval')
         self.public_bootstrap_approved = public_bootstrap_approved
+        self._release_ids = {}
+
+    def _release_identity(self, spec, info, release_id=None):
+        require(isinstance(info, dict) and type(info.get('id')) is int and info['id'] > 0
+                and info.get('tag_name') == spec.tag
+                and type(info.get('draft')) is bool and type(info.get('prerelease')) is bool,
+                'invalid GitHub release identity')
+        require(info.get('url') == f"https://api.github.com/repos/{REPOSITORY}/releases/{info['id']}"
+                and (release_id is None or info['id'] == release_id),
+                'untrusted GitHub release identity')
+        return info
+
+    def _release_json(self, text):
+        try:
+            return json.loads(text)
+        except (ValueError, TypeError):
+            raise Held('invalid GitHub release response') from None
+
+    def _release_by_id(self, spec, release_id):
+        # Construct the endpoint ourselves; never follow a response-supplied URL.
+        info = self._release_identity(spec, self._release_json(run(
+            ['gh', 'api', f'repos/{REPOSITORY}/releases/{release_id}'])), release_id)
+        self._release_ids[spec.tag] = release_id
+        return info
+
+    def _lookup_release(self, spec):
+        if spec.tag in self._release_ids:
+            return self._release_by_id(spec, self._release_ids[spec.tag])
+        response = subprocess.run(['gh', 'api', f'repos/{REPOSITORY}/releases/tags/{spec.tag}'],
+                                  capture_output=True, text=True, timeout=180)
+        if not response.returncode:
+            info = self._release_identity(spec, self._release_json(response.stdout))
+            self._release_ids[spec.tag] = info['id']
+            return info
+        require(bool(re.search(r'\bHTTP 404\b', response.stderr)), 'GitHub lookup held')
+        # GitHub's exact tag endpoint hides drafts. Authenticated listing is a
+        # discovery read, not permission to create on errors or incomplete pages.
+        # --paginate emits one JSON array per page. Decode that stream without
+        # --slurp, which is unavailable on older supported gh installations.
+        text = run(['gh', 'api', '--paginate', f'repos/{REPOSITORY}/releases?per_page=100'])
+        pages = []
+        decoder = json.JSONDecoder()
+        try:
+            while text.strip():
+                page, end = decoder.raw_decode(text.lstrip())
+                pages.append(page)
+                text = text.lstrip()[end:]
+        except ValueError:
+            raise Held('invalid GitHub releases pages') from None
+        require(isinstance(pages, list) and pages and all(isinstance(p, list) for p in pages),
+                'invalid GitHub releases pages')
+        matches = []
+        for page in pages:
+            for info in page:
+                require(isinstance(info, dict) and isinstance(info.get('tag_name'), str),
+                        'invalid GitHub releases entry')
+                if info['tag_name'] == spec.tag:
+                    matches.append(self._release_identity(spec, info))
+        require(len(matches) <= 1, 'ambiguous GitHub release tag')
+        if not matches:
+            return None
+        require(matches[0]['draft'] is True, 'non-draft hidden by GitHub tag lookup; held')
+        return self._release_by_id(spec, matches[0]['id'])
 
     def _download(self, spec, name):
         with tempfile.TemporaryDirectory() as temp:
@@ -220,11 +283,9 @@ class GithubRelease:
     def ensure(self, spec, apk, metadata):
         # Existing tags must resolve to the exact approved source BEFORE creation.
         require(self.tag_commit(spec) in (None, spec.commit), 'existing tag source mismatch')
-        # Only a missing exact tag (404) authorizes creation, not generic API failure.
-        response = subprocess.run(['gh', 'api', f'repos/{REPOSITORY}/releases/tags/{spec.tag}'],
-                                  capture_output=True, text=True, timeout=180)
-        if response.returncode:
-            require('HTTP 404' in response.stderr, 'GitHub lookup held')
+        # Creation requires exact-tag 404 AND successful, exhaustive draft discovery.
+        info = self._lookup_release(spec)
+        if info is None:
             with tempfile.TemporaryDirectory() as temp:
                 path = Path(temp)
                 (path / spec.apk_name).write_bytes(apk)
@@ -234,7 +295,9 @@ class GithubRelease:
                      '--target', spec.commit, '--draft', '--latest=false', '--title', f'Fireside Group {spec.tag}',
                      '--notes', f'Android {spec.version} ({spec.code})',
                      str(path / spec.apk_name), str(path / 'update.json')])
-        info = json.loads(run(['gh', 'api', f'repos/{REPOSITORY}/releases/tags/{spec.tag}']))
+            info = self._lookup_release(spec)
+        if info is None:
+            raise Held('created GitHub draft not found; held')
         require((info['draft'] or (self.allow_published and info['prerelease'] == self.private_mode))
                 and (not info['draft'] or not info['prerelease']),
                 'unverified public release must not precede registry receipt')
@@ -263,8 +326,9 @@ class GithubRelease:
         repo = json.loads(run(['gh', 'api', f'repos/{REPOSITORY}']))
         require(repo.get('private') is True or (repo.get('private') is False and self.public_bootstrap_approved),
                 'bootstrap requires private repository or explicit public APK disclosure approval')
-        target = f'repos/{REPOSITORY}/releases/tags/{spec.tag}'
-        info = json.loads(run(['gh', 'api', target]))
+        info = self._lookup_release(spec)
+        if info is None:
+            raise Held('bootstrap release absent')
         tag_commit = self.tag_commit(spec)
         require(tag_commit == spec.commit or (info.get('draft') is True and tag_commit is None
                 and info.get('target_commitish') == spec.commit), 'bootstrap source mismatch')
@@ -272,13 +336,15 @@ class GithubRelease:
              '--draft=false', '--prerelease=true', '--latest=false',
              '--notes', 'Manual private-capable Android bootstrap. Download the APK asset (GitHub access required for private repositories). '
              'update.json is a receipt, NOT a legacy updater feed. Confirm installation on Android.'])
-        info = json.loads(run(['gh', 'api', target]))
+        info = self._release_by_id(spec, info['id'])
         require(self.tag_commit(spec) == spec.commit, 'bootstrap source readback mismatch')
         require(info.get('tag_name') == spec.tag and info.get('draft') is False
                 and info.get('prerelease') is True, 'bootstrap publication readback mismatch')
 
     def activate(self, spec):
-        info = json.loads(run(['gh', 'api', f'repos/{REPOSITORY}/releases/tags/{spec.tag}']))
+        info = self._lookup_release(spec)
+        if info is None:
+            raise Held('activation release absent')
         tag_commit = self.tag_commit(spec)
         require(tag_commit == spec.commit or (info.get('draft') is True and tag_commit is None
                 and info.get('target_commitish') == spec.commit), 'activation source mismatch')

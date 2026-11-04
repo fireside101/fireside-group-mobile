@@ -5,6 +5,7 @@ import unittest
 from unittest.mock import patch
 import test_mobile_release as base
 import mobile_release as r
+from test_github_draft_lookup import GithubAPI
 from test_supabase_storage import server
 
 
@@ -13,17 +14,14 @@ class BootstrapTests(unittest.TestCase):
         self.spec = r.Spec('1.0.5', 6, 'b'*40, base.SIGNER)
 
     def test_private_activation_uses_prerelease_and_exact_readback(self):
-        gh = r.GithubRelease()
-        draft = dict(draft=True, target_commitish=self.spec.commit)
-        final = dict(tag_name=self.spec.tag, draft=False, prerelease=True)
-        with patch.object(gh, 'tag_commit', side_effect=[None, self.spec.commit]), patch.object(
-                r, 'run', side_effect=[json.dumps({'private': True}), json.dumps(draft), '', json.dumps(final)]) as commands:
+        gh = r.GithubRelease(); api = GithubAPI(self.spec)
+        with patch.object(r.subprocess, 'run', side_effect=api):
             gh.activate_bootstrap(self.spec)
-        edit = commands.call_args_list[2].args[0]
+        edit = api.writes()[0]
         self.assertIn('--prerelease=true', edit)
         self.assertIn('--latest=false', edit)
         self.assertNotIn('--latest=true', edit)
-        self.assertTrue(commands.call_args_list[3].args[0][-1].endswith('/tags/'+self.spec.tag))
+        self.assertTrue(api.calls[-2][-1].endswith('/releases/434159539'))
 
     def test_public_repo_refused_before_edit(self):
         with patch.object(r, 'run', return_value=json.dumps({'private': False})) as commands:
@@ -31,28 +29,30 @@ class BootstrapTests(unittest.TestCase):
             self.assertEqual(commands.call_count, 1)
 
     def test_explicit_public_disclosure_and_failed_readbacks(self):
-        draft = dict(draft=True, target_commitish=self.spec.commit)
         final = dict(tag_name=self.spec.tag, draft=False, prerelease=True)
         for result, accepted in ((final, True), (dict(final, prerelease=False), False),
                                  (dict(final, draft=True), False), (dict(final, tag_name='wrong'), False)):
             gh = r.GithubRelease(public_bootstrap_approved=True)
-            with patch.object(gh, 'tag_commit', side_effect=[None, self.spec.commit]), patch.object(
-                    r, 'run', side_effect=[json.dumps({'private': False}), json.dumps(draft), '', json.dumps(result)]):
+            api = GithubAPI(self.spec)
+            def command(args, **kwargs):
+                response = api(args, **kwargs)
+                if args == ['gh', 'api', f'repos/{r.REPOSITORY}']:
+                    response.stdout = json.dumps({'private': False})
+                elif args[-1].endswith('/releases/434159539') and api.writes():
+                    response.stdout = json.dumps(dict(api.info, **result))
+                return response
+            with patch.object(r.subprocess, 'run', side_effect=command):
                 if accepted:
                     gh.activate_bootstrap(self.spec)
                 else:
                     with self.assertRaises(r.Held): gh.activate_bootstrap(self.spec)
 
     def test_published_private_retry_requires_receipt_and_prerelease(self):
-        import subprocess
-        gh = r.GithubRelease(); gh.private_mode = True
-        info = dict(draft=False, prerelease=True)
         for receipt, prerelease, allowed in ((True, True, True), (False, True, False), (True, False, False)):
-            gh.allow_published = receipt
-            with patch.object(gh, 'tag_commit', return_value=self.spec.commit), patch.object(
-                    r.subprocess, 'run', return_value=subprocess.CompletedProcess([], 0, '{}', '')), patch.object(
-                    r, 'run', return_value=json.dumps(dict(info, prerelease=prerelease))), patch.object(
-                    gh, '_download', side_effect=[base.APK, b'{}']):
+            gh = r.GithubRelease(); gh.private_mode = True; gh.allow_published = receipt
+            api = GithubAPI(self.spec); api.apk = base.APK
+            api.info.update(draft=False, prerelease=prerelease)
+            with patch.object(r.subprocess, 'run', side_effect=api):
                 if allowed:
                     gh.ensure(self.spec, base.APK, {})
                 else:
