@@ -171,8 +171,18 @@ class ApkVerifier:
             path = Path(temp) / 'candidate.apk'
             path.write_bytes(apk)
             certs = run([self.apksigner, 'verify', '--verbose', '--print-certs', str(path)])
-            fingerprints = re.findall(r'^Signer #\d+ certificate SHA-256 digest: ([0-9a-fA-F]+)$', certs, re.M)
-            require([p.lower() for p in fingerprints] == [spec.signer], 'signer mismatch or multiple signers')
+            fingerprints = re.findall(r'^Signer #\d+ certificate SHA-256 digest: ([0-9a-fA-F]{64})$', certs, re.M)
+            schemes = re.findall(r'^(V[123](?:\.[12])? Signer): certificate SHA-256 digest: ([0-9a-fA-F]{64})$', certs, re.M)
+            # Build Tools 37 labels certificate output by signature scheme.
+            # Multiple schemes are allowed only for one unchanged certificate;
+            # rotation, multiple signers, duplicate records and unknown output fail closed.
+            if schemes:
+                require(not fingerprints and re.findall(r'^Number of signers: (\d+)$',certs,re.M)==['1']
+                        and len({label for label,_ in schemes})==len(schemes)
+                        and all(digest.lower()==spec.signer for _,digest in schemes),
+                        'signer mismatch or multiple signers')
+            else:
+                require([p.lower() for p in fingerprints] == [spec.signer], 'signer mismatch or multiple signers')
             require('CN=Android Debug' not in certs, 'debug signing forbidden')
             badging = run([self.aapt, 'dump', 'badging', str(path)])
             match = re.search(r"^package: name='([^']+)' versionCode='([^']+)' versionName='([^']+)'", badging, re.M)

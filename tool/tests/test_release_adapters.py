@@ -35,6 +35,19 @@ class AdapterTests(unittest.TestCase):
                     with self.assertRaises(r.Held): r.ApkVerifier('signer','aapt')(b'x',self.spec)
         with patch.object(r.subprocess,'run',return_value=subprocess.CompletedProcess([],1,'','private secret')):
             with self.assertRaisesRegex(r.Held,'^external verification/asset command failed$'): r.run(['signer'])
+    def test_apksigner37_scheme_labels_and_rotation_refusal(self):
+        same = 'Number of signers: 1\nV2 Signer: certificate SHA-256 digest: '+self.spec.signer+'\n'
+        with patch.object(r,'run',side_effect=[same,self.badge()]):
+            r.ApkVerifier('signer','aapt')(b'x',self.spec)
+        both = same+'V3 Signer: certificate SHA-256 digest: '+self.spec.signer+'\n'
+        with patch.object(r,'run',side_effect=[both,self.badge()]):
+            r.ApkVerifier('signer','aapt')(b'x',self.spec)
+        for bad in [both.replace('V3 Signer: certificate SHA-256 digest: '+self.spec.signer,'V3 Signer: certificate SHA-256 digest: '+'b'*64),
+                    same.replace('Number of signers: 1','Number of signers: 2'),same+same,
+                    same.replace('Number of signers: 1\n','')]:
+            with patch.object(r,'run',return_value=bad),self.assertRaises(r.Held):
+                r.ApkVerifier('signer','aapt')(b'x',self.spec)
+
     def test_s3_conditional_create_and_exact_readback(self):
         try:
             import botocore
