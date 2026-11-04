@@ -48,6 +48,7 @@ dependencies:
 
   # Local storage
   shared_preferences: ^2.2.0
+  sqflite: ^2.4.2
   flutter_secure_storage: ^11.2.0
 
   # Auth
@@ -72,6 +73,7 @@ dependencies:
   http_parser: ^4.1.2
   package_info_plus: ^10.2.2
   path_provider: ^2.1.5
+  workmanager: ^0.10.10
 
 dev_dependencies:
   flutter_test:

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
@@ -18,6 +19,8 @@ import '../../data/providers.dart';
 import '../../data/services/admin_audit_log_service.dart';
 import '../app_card/app_icon_map.dart';
 import '../app_card/status_indicator.dart';
+import 'webview_security.dart';
+import 'native_camera_bridge.dart';
 
 bool usesMobileGatewayFor(String appId) => const {
   'scorecard',
@@ -63,11 +66,39 @@ class _AppWebViewScreenState extends ConsumerState<AppWebViewScreen> {
   WebViewController? _controller;
   bool _isLoading = true;
   bool _webViewCanGoBack = false;
+  late final WebViewSecurity _security;
+  StreamSubscription<AuthState>? _authSubscription;
+  bool _building = false;
+  bool _cameraBusy = false;
+  String? _documentUrl;
   final ImagePicker _imagePicker = ImagePicker();
+
+  @override
+  void dispose() {
+    _security.close();
+    _authSubscription?.cancel();
+    super.dispose();
+  }
 
   @override
   void initState() {
     super.initState();
+    _security = WebViewSecurity(widget.appId);
+    final account = Supabase.instance.client.auth.currentUser?.id;
+    _security.accountChanged(account);
+    _authSubscription = Supabase.instance.client.auth.onAuthStateChange.listen((
+      event,
+    ) {
+      if (event.event == AuthChangeEvent.initialSession ||
+          (event.session?.user.id == account &&
+              event.event != AuthChangeEvent.signedOut)) {
+        return;
+      }
+      _security.accountChanged(event.session?.user.id);
+      _security.close();
+      // Redirect rather than popping a route the auth router may have replaced.
+      if (mounted) context.go('/');
+    });
     ref.read(recentAppsProvider.notifier).record(widget.appId);
   }
 
@@ -96,7 +127,8 @@ class _AppWebViewScreenState extends ConsumerState<AppWebViewScreen> {
 
     final health = ref.watch(healthStatusProvider(app));
 
-    if (_controller == null) {
+    if (_controller == null && !_building) {
+      _building = true;
       WidgetsBinding.instance.addPostFrameCallback((_) {
         _buildController(app);
       });
@@ -176,83 +208,85 @@ class _AppWebViewScreenState extends ConsumerState<AppWebViewScreen> {
     }
   }
 
-  Future<void> _handleWebViewPermission(
-    WebViewPermissionRequest request,
-  ) async {
-    final requestsCamera = request.types.contains(
-      WebViewPermissionResourceType.camera,
-    );
-    final requestsMicrophone = request.types.contains(
-      WebViewPermissionResourceType.microphone,
-    );
-
-    // PTW only needs the camera. Do not grant microphone access to an embedded
-    // app unless that app explicitly becomes an approved use case.
-    if (!requestsCamera || requestsMicrophone) {
-      await request.deny();
-      return;
-    }
-
-    final status = await Permission.camera.request();
-    if (status.isGranted) {
-      await request.grant();
-    } else {
-      await request.deny();
-    }
-  }
+  // Camera WebView permissions lack requesting-frame origin; deny rather than
+  // granting based on the top URL. Native capture uses a top-frame capability.
+  Future<void> _handleWebViewPermission(WebViewPermissionRequest request) =>
+      request.deny();
 
   Future<void> _configureAndroidWebViewPermissions(
     WebViewController controller,
   ) async {
     if (controller.platform is! AndroidWebViewController) return;
-
-    final androidController = controller.platform as AndroidWebViewController;
-    await androidController.setGeolocationEnabled(true);
-    await androidController.setGeolocationPermissionsPromptCallbacks(
+    final android = controller.platform as AndroidWebViewController;
+    await android.setGeolocationEnabled(true);
+    await android.setGeolocationPermissionsPromptCallbacks(
       onShowPrompt: (request) async {
+        final lease = _security.captureLease();
+        if (!_security.canUseNative(sourceOrigin: request.origin)) {
+          return const GeolocationPermissionsResponse(
+            allow: false,
+            retain: false,
+          );
+        }
         final status = await Permission.locationWhenInUse.request();
         return GeolocationPermissionsResponse(
-          allow: status.isGranted,
-          retain: status.isGranted,
+          allow:
+              mounted &&
+              status.isGranted &&
+              _security.isCurrent(lease) &&
+              _security.canUseNative(sourceOrigin: request.origin),
+          retain: false,
         );
       },
     );
   }
 
-  Future<void> _captureNativeCamera(JavaScriptMessage message) async {
-    if (message.message != 'capture') return;
-
+  Future<void> _handleNativeMessage(JavaScriptMessage message) async {
+    if (message.message.length > 512 || _cameraBusy) return;
     try {
-      final image = await _imagePicker.pickImage(
-        source: ImageSource.camera,
-        imageQuality: 78,
-        maxWidth: 1280,
-      );
-      if (image == null) {
-        await _notifyNativeCameraStatus(
-          'Camera cancelled. Tap Take Photo to try again.',
-        );
+      final data = jsonDecode(message.message);
+      if (data is! Map<String, dynamic> ||
+          data['token'] is! String ||
+          data['id'] is! int ||
+          !const ['capture', 'settings'].contains(data['action'])) {
         return;
       }
-
-      final bytes = await image.readAsBytes();
-      final dataUrl = 'data:image/jpeg;base64,${base64Encode(bytes)}';
-      final encodedDataUrl = jsonEncode(dataUrl);
-      await _controller?.runJavaScript(
-        "window.dispatchEvent(new CustomEvent('firesideNativePhoto',{detail:$encodedDataUrl}));",
+      final lease = _security.authorizeBridge(
+        data['token'] as String,
+        data['id'] as int,
+      );
+      final pageUrl = _documentUrl;
+      if (lease == null || pageUrl == null || !mounted) return;
+      if (data['action'] == 'settings') {
+        await openAppSettings();
+        return;
+      }
+      _cameraBusy = true;
+      await captureNativePhoto<XFile>(
+        pick: () => _imagePicker.pickImage(
+          source: ImageSource.camera,
+          imageQuality: 78,
+          maxWidth: 1280,
+        ),
+        read: (image) => image.readAsBytes(),
+        isCurrent: () => mounted && _security.isCurrent(lease),
+        deliver: (event, result) async {
+          await _controller?.runJavaScript(
+            nativeBridgeDelivery(
+              pageUrl,
+              data['token'] as String,
+              data['id'] as int,
+              event,
+              result,
+            ),
+          );
+        },
       );
     } catch (_) {
-      await _notifyNativeCameraStatus(
-        'The phone camera could not open. Allow camera access in the app settings and try again.',
-      );
+      // No late/error callback is injected into a possibly different document.
+    } finally {
+      _cameraBusy = false;
     }
-  }
-
-  Future<void> _notifyNativeCameraStatus(String status) async {
-    final encodedStatus = jsonEncode(status);
-    await _controller?.runJavaScript(
-      "window.dispatchEvent(new CustomEvent('firesideNativeCameraStatus',{detail:$encodedStatus}));",
-    );
   }
 
   Future<void> _buildController(FiresideApplication app) async {
@@ -261,6 +295,11 @@ class _AppWebViewScreenState extends ConsumerState<AppWebViewScreen> {
       applicationId: app.id,
       applicationName: app.name,
     );
+    if (!mounted || !_security.allows(app.url ?? '')) {
+      _building = false;
+      if (mounted) setState(() => _isLoading = false);
+      return;
+    }
     final usesMobileGateway = usesMobileGatewayFor(app.id);
     final accessToken = usesMobileGateway
         ? Supabase.instance.client.auth.currentSession?.accessToken
@@ -268,34 +307,52 @@ class _AppWebViewScreenState extends ConsumerState<AppWebViewScreen> {
     final headers = accessToken == null
         ? const <String, String>{}
         : {'Authorization': 'Bearer $accessToken'};
-    final controller =
-        WebViewController(onPermissionRequest: _handleWebViewPermission)
-          ..setJavaScriptMode(JavaScriptMode.unrestricted)
-          ..setBackgroundColor(context.appColors.ivory)
-          ..addJavaScriptChannel(
-            'FiresideGroupPermissions',
-            onMessageReceived: (_) async {
-              await openAppSettings();
-            },
-          )
-          ..addJavaScriptChannel(
-            'FiresideGroupCamera',
-            onMessageReceived: _captureNativeCamera,
-          )
-          ..setNavigationDelegate(
-            NavigationDelegate(
-              onProgress: (progress) {
-                if (progress >= 100) {
-                  if (mounted) setState(() => _isLoading = false);
-                }
-              },
-              onPageFinished: (url) {
-                if (mounted) setState(() => _isLoading = false);
-                _updateWebViewHistory();
-              },
-            ),
-          );
+    final background = context.appColors.ivory;
+    final controller = WebViewController(
+      onPermissionRequest: _handleWebViewPermission,
+    );
+    // Await security configuration before the first bearer-bearing request.
+    await controller.setJavaScriptMode(JavaScriptMode.unrestricted);
+    await controller.addJavaScriptChannel(
+      'FiresideNativeTransport',
+      onMessageReceived: _handleNativeMessage,
+    );
+    await controller.setBackgroundColor(background);
+    await controller.setNavigationDelegate(
+      NavigationDelegate(
+        onNavigationRequest: (request) {
+          if (!_security.allows(request.url)) {
+            return NavigationDecision.prevent;
+          }
+          if (request.isMainFrame) _security.navigationStarted();
+          return NavigationDecision.navigate;
+        },
+        onPageStarted: (_) => _security.navigationStarted(),
+        onProgress: (progress) {
+          if (progress >= 100) {
+            if (mounted) setState(() => _isLoading = false);
+          }
+        },
+        onPageFinished: (url) {
+          _security.pageFinished(url);
+          _documentUrl = url;
+          final capability = _security.documentCapability;
+          if (capability != null) {
+            unawaited(
+              _controller
+                  ?.runJavaScript(nativeBridgeBootstrap(url, capability))
+                  .catchError((Object _) {}),
+            );
+          }
+          if (mounted) setState(() => _isLoading = false);
+          _updateWebViewHistory();
+        },
+      ),
+    );
     await _configureAndroidWebViewPermissions(controller);
+    if (!mounted || !_security.allows(app.url ?? '')) return;
+    _controller = controller;
+    _security.navigationStarted();
     await controller.loadRequest(
       Uri.parse(
         usesMobileGateway

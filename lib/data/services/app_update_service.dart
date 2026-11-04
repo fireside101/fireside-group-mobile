@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'update_registry.dart';
 
 import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart';
@@ -10,16 +11,76 @@ import 'package:package_info_plus/package_info_plus.dart';
 import 'package:path_provider/path_provider.dart';
 
 class AppUpdateConfig {
-  const AppUpdateConfig({this.owner = const String.fromEnvironment('UPDATE_REPOSITORY_OWNER', defaultValue: 'fireside101'), this.repository = const String.fromEnvironment('UPDATE_REPOSITORY_NAME', defaultValue: 'fireside-group-mobile')});
+  const AppUpdateConfig({this.storageBase = const String.fromEnvironment('UPDATE_STORAGE_BASE'), this.owner = const String.fromEnvironment('UPDATE_REPOSITORY_OWNER', defaultValue: 'fireside101'), this.repository = const String.fromEnvironment('UPDATE_REPOSITORY_NAME', defaultValue: 'fireside-group-mobile')});
+  final String storageBase;
   final String owner;
+  bool isStorageUri(Uri uri) {
+    final base = Uri.tryParse(storageBase);
+    return base != null && base.scheme == 'https' && base.host.isNotEmpty &&
+      base.userInfo.isEmpty && !base.hasQuery && !base.hasFragment &&
+      uri.scheme == 'https' && uri.host == base.host && uri.port == base.port &&
+      uri.userInfo.isEmpty && !uri.hasFragment &&
+      uri.path.startsWith('${base.path}/') &&
+      !uri.pathSegments.any((s) => s == '..' || s == '.');
+  }
   final String repository;
   Uri get latestReleaseApiUri => Uri.https('api.github.com', '/repos/$owner/$repository/releases/latest');
   bool isReleaseUri(Uri uri) => uri.scheme == 'https' && uri.host == 'github.com' && uri.pathSegments.length >= 6 && uri.pathSegments[0] == owner && uri.pathSegments[1] == repository && uri.pathSegments[2] == 'releases' && uri.pathSegments[3] == 'download';
 }
 
 class AppUpdateMetadata {
-  const AppUpdateMetadata({required this.versionCode, required this.versionName, required this.releaseNotes, required this.apkUrl, this.apkSize, this.apkSha256});
+  const AppUpdateMetadata({required this.versionCode, required this.versionName, required this.releaseNotes, required this.apkUrl, this.apkSize, this.apkSha256, this.commit, this.signerSha256, this.bucket, this.objectKey, this.sessionBinding});
+  final String? bucket;
+  final String? objectKey;
+  final String? sessionBinding;
+  final String? commit;
+  final String? signerSha256;
   final int versionCode;
+
+  factory AppUpdateMetadata.fromRegistry(Map<String, dynamic> json, {required AppUpdateConfig config}) {
+    final privateArtifact = json['provider'] == 'supabase-rest';
+    final urlValue = json[privateArtifact ? 'download_url' : 'apk_url'];
+    final url = Uri.tryParse(urlValue is String ? urlValue : '');
+    final code = json['version_code'];
+    final size = json['size'];
+    final hash = json['sha256'];
+    final signer = json['signer_sha256'];
+    final commit = json['commit'];
+    final version = json['version_name'];
+    if (json['package'] != 'com.firesideafrica.firesidegroup' ||
+      code is! int || code <= 0 || code > 2100000000 ||
+      size is! int || size <= 0 || size > 536870912 ||
+      hash is! String || !RegExp(r'^[a-f0-9]{64}$').hasMatch(hash) ||
+      signer is! String || !RegExp(r'^[a-f0-9]{64}$').hasMatch(signer) ||
+      commit is! String || !RegExp(r'^[a-f0-9]{40}$').hasMatch(commit) ||
+      version is! String || !RegExp(r'^[0-9]+\.[0-9]+\.[0-9]+$').hasMatch(version) ||
+      url == null || !config.isStorageUri(url)) {
+      throw const FormatException('Invalid authenticated update metadata.');
+    }
+    if (privateArtifact) {
+      final key = 'com.firesideafrica.firesidegroup/$code/$commit/$hash.apk';
+      final expiry = DateTime.tryParse(json['expires_at'] is String ? json['expires_at'] as String : '');
+      final now = DateTime.now().toUtc();
+      if (json.containsKey('apk_url') || json['bucket'] != 'fireside-mobile-releases' ||
+          json['object_key'] != key ||
+          url.host != 'supabase.firesideafrica.cloud' || url.port != 443 ||
+          url.path != '/storage/v1/object/sign/fireside-mobile-releases/$key' ||
+          url.toString().contains('%') || url.queryParametersAll.length != 1 ||
+          url.queryParametersAll['token']?.length != 1 ||
+          !RegExp(r'^[A-Za-z0-9_.-]{1,4096}$').hasMatch(url.queryParameters['token'] ?? '') ||
+          expiry == null || !expiry.isAfter(now) ||
+          expiry.isAfter(now.add(const Duration(seconds: 120)))) {
+        throw const FormatException('Invalid private update delivery.');
+      }
+    } else if (json.containsKey('provider') || json.containsKey('bucket') || json.containsKey('object_key')) {
+      throw const FormatException('Invalid private update identity.');
+    }
+    return AppUpdateMetadata(versionCode:code,versionName:version,releaseNotes:'',
+      apkUrl:url,apkSize:size,apkSha256:hash,commit:commit,signerSha256:signer,
+      bucket:privateArtifact ? json['bucket'] as String : null,
+      objectKey:privateArtifact ? json['object_key'] as String : null,
+      sessionBinding:json['session_binding'] as String?);
+  }
   final String versionName;
   final String releaseNotes;
   final Uri apkUrl;
@@ -78,9 +139,10 @@ class UpdateCancelled implements Exception {
 }
 
 class AppUpdateService {
-  AppUpdateService({http.Client? client, this.packageInfo, this.config = const AppUpdateConfig(), this._androidOverride, this._storageDirectory, MethodChannel? platformChannel}) : _client = client ?? http.Client(), _platformChannel = platformChannel ?? const MethodChannel('fireside_group/app_updates');
+  AppUpdateService({this.registry, http.Client? client, this.packageInfo, this.config = const AppUpdateConfig(), this._androidOverride, this._storageDirectory, MethodChannel? platformChannel}) : _client = client ?? http.Client(), _platformChannel = platformChannel ?? const MethodChannel('fireside_group/app_updates');
   static const _timeout = Duration(seconds: 8);
   static const automaticCheckCooldown = Duration(minutes: 15);
+  final UpdateRegistry? registry;
   final http.Client _client;
   final PackageInfo? packageInfo;
   final AppUpdateConfig config;
@@ -91,9 +153,11 @@ class AppUpdateService {
   DateTime? _lastAutomaticCheck;
   AppUpdateCheckResult? _lastAutomaticResult;
   int? _deferredVersionCode;
-  StreamSubscription<List<int>>? _downloadSubscription;
-  IOSink? _downloadSink;
-  Completer<void>? _downloadCompleter;
+  // A range finishes well within the private URL's 60-second authorization.
+  static const _rangeBytes = 4 * 1024 * 1024;
+  static const _rangeDeadline = Duration(seconds: 45);
+  StreamIterator<List<int>>? _downloadIterator;
+  Completer<void>? _requestAbort;
   bool _downloadInProgress = false;
   bool _cancelRequested = false;
   UpdateState state = UpdateState.idle;
@@ -104,7 +168,7 @@ class AppUpdateService {
     final inFlight = _checkInFlight;
     if (inFlight != null) return inFlight;
     final now = DateTime.now();
-    if (automatic && !force && _lastAutomaticCheck != null &&
+    if (registry == null && automatic && !force && _lastAutomaticCheck != null &&
         now.difference(_lastAutomaticCheck!) < automaticCheckCooldown) {
       return Future.value(_lastAutomaticResult ?? const AppUpdateCheckResult.none());
     }
@@ -123,6 +187,12 @@ class AppUpdateService {
       final installedInfo = packageInfo ?? await PackageInfo.fromPlatform();
       final installedBuild = int.tryParse(installedInfo.buildNumber);
       if (installedBuild == null) return const AppUpdateCheckResult.unavailable('The installed build number is unavailable.');
+      if (registry != null) {
+        final data = await registry!.latest().timeout(_timeout);
+        if (data == null) return const AppUpdateCheckResult.none();
+        final metadata = AppUpdateMetadata.fromRegistry(data, config:config);
+        return metadata.versionCode > installedBuild ? AppUpdateCheckResult.update(metadata) : const AppUpdateCheckResult.none();
+      }
       final response = await _client.get(config.latestReleaseApiUri, headers: const {'Accept': 'application/vnd.github+json', 'User-Agent': 'fireside-group-mobile-updater'}).timeout(_timeout);
       if (response.statusCode == 403 || response.statusCode == 429) return const AppUpdateCheckResult.unavailable('GitHub update checks are temporarily rate limited.');
       if (response.statusCode == 404) return const AppUpdateCheckResult.unavailable('No published GitHub release is available yet.');
@@ -180,10 +250,13 @@ class AppUpdateService {
     state = UpdateState.downloading;
     File? temp;
     try {
+      final authorized = await _recheck(metadata);
       final directory = await _directory();
       await directory.create(recursive: true);
       final target = await _cachedFile(metadata);
+      _checkDownloadIdentity(metadata);
       if (await _isValid(target, metadata)) {
+        _checkDownloadIdentity(metadata);
         state = UpdateState.ready;
         onProgress?.call(UpdateProgress(UpdateState.ready, received: await target.length(), total: metadata.apkSize));
         return;
@@ -191,46 +264,25 @@ class AppUpdateService {
       final tempFile = File('${target.path}.part');
       temp = tempFile;
       try { await tempFile.delete(); } on FileSystemException { /* already absent */ }
-      final response = await _client.send(http.Request('GET', metadata.apkUrl)).timeout(const Duration(minutes: 5));
-      if (_cancelRequested) throw const UpdateCancelled();
-      if (response.statusCode != 200) throw HttpException('Download failed with HTTP ${response.statusCode}.');
-      final total = metadata.apkSize ?? response.contentLength;
-      var received = 0;
-      final sink = tempFile.openWrite();
-      _downloadSink = sink;
-      final completer = Completer<void>();
-      _downloadCompleter = completer;
-      _downloadSubscription = response.stream.timeout(const Duration(seconds: 30), onTimeout: (sink) {
-        sink.addError(TimeoutException('The APK download stalled.'));
-        sink.close();
-      }).listen((chunk) {
-        received += chunk.length;
-        sink.add(chunk);
-        onProgress?.call(UpdateProgress(UpdateState.downloading, received: received, total: total));
-      }, onError: (Object error, StackTrace stack) async {
-        await sink.close();
-        if (!completer.isCompleted) completer.completeError(error, stack);
-      }, onDone: () async {
-        await sink.close();
-        if (!completer.isCompleted) completer.complete();
-      }, cancelOnError: true);
-      await completer.future;
+      _assertSession(metadata);
+      final received = await _downloadRanges(tempFile, metadata, authorized, onProgress);
       if (_cancelRequested) throw const UpdateCancelled();
       if (!await _isValid(tempFile, metadata)) throw const FormatException('The downloaded APK failed integrity validation.');
+      await _recheck(metadata);
+      _checkDownloadIdentity(metadata);
       await tempFile.rename(target.path);
       state = UpdateState.ready;
-      onProgress?.call(UpdateProgress(UpdateState.ready, received: received, total: total));
+      onProgress?.call(UpdateProgress(UpdateState.ready, received: received, total: metadata.apkSize));
     } catch (error) {
       if (temp != null) {
         try { await temp.delete(); } on FileSystemException { /* already absent */ }
       }
       state = UpdateState.failed;
-      onProgress?.call(UpdateProgress(UpdateState.failed, message: error.toString()));
+      onProgress?.call(const UpdateProgress(UpdateState.failed, message: 'Update download failed. Check authorization and connectivity.'));
       rethrow;
     } finally {
-      _downloadSubscription = null;
-      _downloadSink = null;
-      _downloadCompleter = null;
+      _downloadIterator = null;
+      _requestAbort = null;
       _downloadInProgress = false;
     }
   }
@@ -238,23 +290,189 @@ class AppUpdateService {
   Future<void> cancelDownload() async {
     if (!_downloadInProgress) return;
     _cancelRequested = true;
-    final subscription = _downloadSubscription;
-    final completer = _downloadCompleter;
-    if (completer != null && !completer.isCompleted) {
-      completer.completeError(const UpdateCancelled());
+    final abort = _requestAbort;
+    if (abort != null && !abort.isCompleted) abort.complete();
+    await _downloadIterator?.cancel();
+  }
+
+  void _checkDownloadIdentity(AppUpdateMetadata metadata) {
+    _assertSession(metadata);
+    if (_cancelRequested) throw const UpdateCancelled();
+  }
+
+  Future<int> _downloadRanges(File temp, AppUpdateMetadata metadata,
+      AppUpdateMetadata authorized, void Function(UpdateProgress)? onProgress) async {
+    final expected = metadata.apkSize;
+    var offset = 0;
+    String? etag;
+    final output = await temp.open(mode: FileMode.write);
+    try {
+      while (expected == null ? offset == 0 : offset < expected) {
+        _checkDownloadIdentity(metadata);
+        final end = expected == null || expected - offset > _rangeBytes
+            ? offset + _rangeBytes - 1 : expected - 1;
+        // Reauthorize every bounded GET, not just after a token expires. The
+        // registry must still advertise the identical artifact and session epoch.
+        if (offset > 0) authorized = await _recheck(metadata);
+        var attempts = 0;
+        while (true) {
+          _checkDownloadIdentity(metadata);
+          final abort = Completer<void>();
+          _requestAbort = abort;
+          final watch = Stopwatch()..start();
+          final deadline = Timer(_rangeDeadline, () {
+            if (!abort.isCompleted) abort.complete();
+          });
+          StreamIterator<List<int>>? iterator;
+          try {
+            final request = http.AbortableRequest('GET', authorized.apkUrl,
+                abortTrigger: abort.future)
+              ..followRedirects = false
+              ..headers['Range'] = 'bytes=$offset-$end'
+              ..headers['Accept-Encoding'] = 'identity';
+            if (etag != null) request.headers['If-Match'] = etag;
+            final response = await _client.send(request).timeout(_timeout);
+            iterator = StreamIterator(response.stream);
+            _downloadIterator = iterator;
+            _checkDownloadIdentity(metadata);
+            if ((response.statusCode == 401 || response.statusCode == 403) &&
+                registry != null && attempts == 0) {
+              attempts++;
+              await iterator.cancel();
+              authorized = await _recheck(metadata);
+              continue;
+            }
+            final encoding = response.headers['content-encoding'];
+            if (encoding != null && encoding.toLowerCase() != 'identity') {
+              throw const FormatException('Encoded APK responses are not supported.');
+            }
+            final int bodySize;
+            if (response.statusCode == 206) {
+              final range = RegExp(r'^bytes ([0-9]+)-([0-9]+)/([0-9]+)$')
+                  .firstMatch(response.headers['content-range'] ?? '');
+              final tag = response.headers['etag'];
+              if (expected == null || range == null ||
+                  int.tryParse(range[1]!) != offset ||
+                  int.tryParse(range[2]!) != end ||
+                  int.tryParse(range[3]!) != expected ||
+                  tag == null || !RegExp(r'^"[\x21\x23-\x7e]+"$').hasMatch(tag) ||
+                  (etag != null && tag != etag)) {
+                throw const FormatException('Invalid APK range or artifact validator.');
+              }
+              etag = tag;
+              bodySize = end - offset + 1;
+            } else if (response.statusCode == 200 && offset == 0 &&
+                (expected == null || expected <= _rangeBytes)) {
+              // Explicit small, complete legacy compatibility only. A server
+              // ignoring Range can never force a large single-stream download.
+              bodySize = expected ?? _rangeBytes;
+            } else {
+              throw HttpException('Download failed with HTTP ${response.statusCode}.');
+            }
+            if (response.contentLength != null &&
+                (response.contentLength! > bodySize ||
+                 (expected != null && response.contentLength != bodySize))) {
+              throw const FormatException('Invalid APK response length.');
+            }
+            var written = 0;
+            while (true) {
+              final remaining = _rangeDeadline - watch.elapsed;
+              if (remaining <= Duration.zero) throw TimeoutException('APK range timed out.');
+              final idle = remaining < const Duration(seconds: 30)
+                  ? remaining : const Duration(seconds: 30);
+              if (!await iterator.moveNext().timeout(idle)) break;
+              _checkDownloadIdentity(metadata);
+              final chunk = iterator.current;
+              if (written + chunk.length > bodySize) {
+                throw const FormatException('APK exceeds expected range size.');
+              }
+              // Await each private-file write before requesting another network
+              // chunk. Unlike an unpaused IOSink listener, memory is bounded.
+              await output.writeFrom(chunk);
+              written += chunk.length;
+              _checkDownloadIdentity(metadata);
+              onProgress?.call(UpdateProgress(UpdateState.downloading,
+                  received: offset + written, total: expected));
+            }
+            _checkDownloadIdentity(metadata);
+            if (written == 0 || (expected != null && written != bodySize)) {
+              throw const FormatException('Incomplete APK range body.');
+            }
+            offset += written;
+            break;
+          } catch (error) {
+            _checkDownloadIdentity(metadata);
+            // Retry only interrupted transport, once at the same verified
+            // boundary. Never append bytes from an incomplete range.
+            if (attempts == 0 && (error is http.ClientException ||
+                error is SocketException || error is TimeoutException)) {
+              attempts++;
+              if (!abort.isCompleted) abort.complete();
+              await iterator?.cancel();
+              await output.truncate(offset);
+              await output.setPosition(offset);
+              authorized = await _recheck(metadata);
+              continue;
+            }
+            // IOClient exceptions include the request URI (a bearer signed URL).
+            // Never propagate that URI to the prompt, logs or caller diagnostics.
+            if (error is http.ClientException || error is SocketException) {
+              throw const HttpException('The APK connection was interrupted. Try again.');
+            }
+            rethrow;
+          } finally {
+            deadline.cancel();
+            if (!abort.isCompleted) abort.complete();
+            await iterator?.cancel();
+            _downloadIterator = null;
+            _requestAbort = null;
+          }
+        }
+      }
+      await output.flush();
+      return offset;
+    } finally {
+      await output.close();
     }
-    await subscription?.cancel();
-    await _downloadSink?.close();
-    _downloadSubscription = null;
+  }
+
+  void _assertSession(AppUpdateMetadata metadata) {
+    final reader = registry;
+    if (reader is UpdateSessionGuard &&
+        (metadata.sessionBinding == null || metadata.sessionBinding != (reader as UpdateSessionGuard).sessionBinding)) {
+      throw StateError('Update identity changed. Check again.');
+    }
+  }
+
+  Future<AppUpdateMetadata> _recheck(AppUpdateMetadata metadata) async {
+    if (registry == null) return metadata; // Explicit legacy compatibility, not a fallback.
+    _assertSession(metadata);
+    final data = await registry!.latest().timeout(_timeout);
+    _assertSession(metadata);
+    if (data == null) throw StateError('Update paused, revoked or no longer available.');
+    final fresh = AppUpdateMetadata.fromRegistry(data, config:config);
+    if (fresh.commit != metadata.commit || fresh.apkSha256 != metadata.apkSha256 ||
+        fresh.apkSize != metadata.apkSize || fresh.versionCode != metadata.versionCode ||
+        fresh.signerSha256 != metadata.signerSha256 || fresh.versionName != metadata.versionName ||
+        fresh.bucket != metadata.bucket || fresh.objectKey != metadata.objectKey ||
+        fresh.sessionBinding != metadata.sessionBinding ||
+        (metadata.bucket == null && fresh.apkUrl != metadata.apkUrl)) {
+      throw StateError('Update authorization changed. Check again.');
+    }
+    return fresh;
   }
 
   Future<UpdateInstallResult> installUpdate(AppUpdateMetadata metadata) async {
+    await _recheck(metadata);
     final file = await _cachedFile(metadata);
     if (!await _isValid(file, metadata)) throw StateError('A complete validated APK download is required before installation.');
+    _assertSession(metadata);
     final allowed = await _platformChannel.invokeMethod<bool>('canInstallPackages') ?? false;
+    await _recheck(metadata);
+    _assertSession(metadata);
     if (!allowed) { state = UpdateState.permissionRequired; await _platformChannel.invokeMethod<void>('openInstallPermissionSettings'); return UpdateInstallResult.permissionRequired; }
     state = UpdateState.installing;
-    await _platformChannel.invokeMethod<void>('installApk', {'path': file.path});
+    await _platformChannel.invokeMethod<void>('installApk', {'path': file.path, 'versionCode':metadata.versionCode, 'sha256':metadata.apkSha256, 'size':metadata.apkSize, 'signerSha256':metadata.signerSha256});
     return UpdateInstallResult.installerOpened;
   }
 }

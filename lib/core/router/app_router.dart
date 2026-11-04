@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
@@ -77,8 +78,10 @@ final routerProvider = Provider<GoRouter>((ref) {
       ),
       GoRoute(
         path: '/app/:appId/open',
-        builder: (context, state) =>
-            AppWebViewScreen(appId: state.pathParameters['appId']!),
+        builder: (context, state) => AppWebViewScreen(
+          key: ValueKey(state.pathParameters['appId']),
+          appId: state.pathParameters['appId']!,
+        ),
       ),
     ],
   );

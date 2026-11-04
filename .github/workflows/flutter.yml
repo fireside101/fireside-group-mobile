@@ -3,235 +3,290 @@ name: Flutter
 on:
   pull_request:
   push:
-    branches:
-      - main
-    tags:
-      - 'v*'
+    branches: [main]
   workflow_dispatch:
+    inputs:
+      publish_android:
+        description: 'Owner-approved Android release from current main (requires protected mobile-release environment)'
+        type: boolean
+        default: false
+      publish_bootstrap:
+        description: 'Publish manual bootstrap as non-latest prerelease (also requires publish_android)'
+        type: boolean
+        default: false
+      approve_public_bootstrap:
+        description: 'Explicitly approve PUBLIC APK/receipt disclosure in this public repository (not private Storage)'
+        type: boolean
+        default: false
 
+# Serialize all mobile publication candidates, not just each tag. Do not cancel a promotion.
 concurrency:
-  group: flutter-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
-
+  group: flutter-${{ github.event_name == 'pull_request' && github.ref || 'main-release' }}
+  cancel-in-progress: false
 permissions:
   contents: read
-
+  actions: read
 env:
   FLUTTER_VERSION: '3.47.4'
 
 jobs:
+  release-tooling:
+    name: Offline release contract tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install -r tool/requirements-release.txt
+      - run: python -m unittest discover -s tool/tests -v
+
   checks:
     name: Analyze and test
     runs-on: ubuntu-latest
-
     steps:
-      - name: Check out repository
-        uses: actions/checkout@v4
-
-      - name: Set up Flutter
-        uses: subosito/flutter-action@v2
+      - uses: actions/checkout@v4
+      # Executes the actual bridge JavaScript security regression under Node.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: subosito/flutter-action@v2
         with:
           flutter-version: ${{ env.FLUTTER_VERSION }}
           channel: stable
           cache: true
-
-      - name: Verify Flutter SDK
-        run: flutter --version
-
-      - name: Install dependencies
-        run: flutter pub get
-
-      - name: Generate Dart sources
-        run: dart run build_runner build --delete-conflicting-outputs
-
-      - name: Analyze
-        run: flutter analyze
-
-      - name: Run tests
-        run: flutter test
+      - run: flutter --version
+      - run: flutter pub get
+      - run: dart run build_runner build --delete-conflicting-outputs
+      - run: flutter analyze
+      - run: flutter test
 
   build:
-    name: Build APK and web artifacts
-    if: github.event_name != 'pull_request'
-    needs: checks
+    name: Build signed Android APK
+    if: github.actor == 'josephndex' && github.triggering_actor == 'josephndex' && github.ref == 'refs/heads/main' && (github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.publish_android == true))
+    needs: [checks, release-tooling]
     runs-on: ubuntu-latest
-
+    # Owner-approved automation: main-only/no bypass, no manual reviewer deadlock.
+    # Both original and rerun actors are pinned above, never read from configurable vars.
+    # The explicit owner-controlled variable below keeps absent/new environments fail-closed.
+    environment: mobile-release
     steps:
-      - name: Check out repository
-        uses: actions/checkout@v4
-
-      - name: Set up Java
-        uses: actions/setup-java@v4
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
-
-      - name: Set up Flutter
-        uses: subosito/flutter-action@v2
+      - uses: subosito/flutter-action@v2
         with:
           flutter-version: ${{ env.FLUTTER_VERSION }}
           channel: stable
           cache: true
-
-      - name: Verify Flutter SDK
-        run: flutter --version
-
-      - name: Install dependencies
-        run: flutter pub get
-
-      - name: Generate Dart sources
-        run: dart run build_runner build --delete-conflicting-outputs
-
-      - name: Validate tagged-release version
-        if: startsWith(github.ref, 'refs/tags/v')
-        run: |
-          dart run tool/generate_update_metadata.dart \
-            --tag "$GITHUB_REF_NAME" \
-            --repository "$GITHUB_REPOSITORY" \
-            --apk-name version-validation.apk \
-            --output "$RUNNER_TEMP/version-validation.json"
-
-      - name: Validate tagged-release signing configuration
-        if: startsWith(github.ref, 'refs/tags/v')
+      - run: flutter pub get
+      - run: dart run build_runner build --delete-conflicting-outputs
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install -r tool/requirements-release.txt
+      - name: Mount approved registry TLS CA
+        env:
+          GH_TOKEN: ${{ github.token }}
+          MOBILE_RELEASE_APPROVED: ${{ vars.MOBILE_RELEASE_APPROVED }}
+          MOBILE_PUBLISH_ANDROID: ${{ inputs.publish_android }}
+          MOBILE_REGISTRY_CA_PEM: ${{ vars.MOBILE_REGISTRY_CA_PEM }}
+          MOBILE_REGISTRY_DSN: ${{ secrets.MOBILE_REGISTRY_DSN }}
+        run: python tool/mobile_release.py --prepare-registry-ca
+      - name: Allocate immutable commit version before signing
+        env:
+          GH_TOKEN: ${{ github.token }}
+          MOBILE_RELEASE_APPROVED: ${{ vars.MOBILE_RELEASE_APPROVED }}
+          MOBILE_PUBLISH_ANDROID: ${{ inputs.publish_android }}
+          MOBILE_PRODUCTION_SIGNER_SHA256: ${{ vars.MOBILE_PRODUCTION_SIGNER_SHA256 }}
+          MOBILE_REGISTRY_CONTRACT: ${{ vars.MOBILE_REGISTRY_CONTRACT }}
+          MOBILE_REGISTRY_DSN: ${{ secrets.MOBILE_REGISTRY_DSN }}
+          MOBILE_STORAGE_PROVIDER: ${{ vars.MOBILE_STORAGE_PROVIDER }}
+          MOBILE_SUPABASE_STORAGE_BUCKET: ${{ vars.MOBILE_SUPABASE_STORAGE_BUCKET }}
+          MOBILE_S3_PUBLIC_BASE: ${{ vars.MOBILE_S3_PUBLIC_BASE }}
+        run: python tool/mobile_release.py --allocate
+      - name: Require full production signing configuration
         env:
           ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          MOBILE_RELEASE_APPROVED: ${{ vars.MOBILE_RELEASE_APPROVED }}
         run: |
-          missing=()
-          [[ -n "$ANDROID_KEYSTORE_BASE64" ]] || missing+=(ANDROID_KEYSTORE_BASE64)
-          [[ -n "$ANDROID_KEYSTORE_PASSWORD" ]] || missing+=(ANDROID_KEYSTORE_PASSWORD)
-          [[ -n "$ANDROID_KEY_PASSWORD" ]] || missing+=(ANDROID_KEY_PASSWORD)
-          [[ -n "$ANDROID_KEY_ALIAS" ]] || missing+=(ANDROID_KEY_ALIAS)
-          if (( ${#missing[@]} > 0 )); then
-            echo "Missing required Android signing secret(s): ${missing[*]}"
-            echo "Tagged releases cannot fall back to debug signing."
-            exit 1
-          fi
-
-      - name: Restore Android signing configuration
+          [[ "$MOBILE_RELEASE_APPROVED" == true ]] || { echo 'Protected environment approval configuration held'; exit 1; }
+          for name in ANDROID_KEYSTORE_BASE64 ANDROID_KEYSTORE_PASSWORD ANDROID_KEY_PASSWORD ANDROID_KEY_ALIAS; do
+            [[ -n "${!name}" ]] || { echo "Missing signing input: $name; no debug fallback permitted"; exit 1; }
+          done
+          umask 077
+          base64 --decode <<< "$ANDROID_KEYSTORE_BASE64" > "$RUNNER_TEMP/fireside-release.keystore"
+          printf '%s\n' "storeFile=$RUNNER_TEMP/fireside-release.keystore" \
+            "storePassword=$ANDROID_KEYSTORE_PASSWORD" "keyPassword=$ANDROID_KEY_PASSWORD" \
+            "keyAlias=$ANDROID_KEY_ALIAS" > android/key.properties
+      - name: Reuse original signed APK on retry
+        id: reuse
         env:
-          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
-          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
-          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
-          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
-        run: |
-          if [[ -n "$ANDROID_KEYSTORE_BASE64$ANDROID_KEYSTORE_PASSWORD$ANDROID_KEY_PASSWORD$ANDROID_KEY_ALIAS" ]]; then
-            if ! [[ -n "$ANDROID_KEYSTORE_BASE64" && -n "$ANDROID_KEYSTORE_PASSWORD" && -n "$ANDROID_KEY_PASSWORD" && -n "$ANDROID_KEY_ALIAS" ]]; then
-              echo "Android signing secrets are partially configured. Provide all four or none."
-              exit 1
-            fi
-            umask 077
-            base64 --decode <<< "$ANDROID_KEYSTORE_BASE64" > "$RUNNER_TEMP/fireside-release.keystore"
-            printf '%s\n' \
-              "storeFile=$RUNNER_TEMP/fireside-release.keystore" \
-              "storePassword=$ANDROID_KEYSTORE_PASSWORD" \
-              "keyPassword=$ANDROID_KEY_PASSWORD" \
-              "keyAlias=$ANDROID_KEY_ALIAS" > android/key.properties
-          fi
-
-      - name: Build Android APK
+          GH_TOKEN: ${{ github.token }}
+        run: python tool/mobile_release.py --reuse
+      - name: Build APK and contract-specific bootstrap metadata
+        if: steps.reuse.outputs.reused != 'true'
         env:
+          MOBILE_REGISTRY_CONTRACT: ${{ vars.MOBILE_REGISTRY_CONTRACT }}
+          MOBILE_PRODUCTION_SIGNER_SHA256: ${{ vars.MOBILE_PRODUCTION_SIGNER_SHA256 }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
           PORTAL_API_BASE_URL: ${{ secrets.PORTAL_API_BASE_URL }}
         run: |
-          flutter build apk --release \
+          update_registry=github
+          update_storage_base=''
+          if [[ "$MOBILE_REGISTRY_CONTRACT" == mobile_release_private_v1 ]]; then
+            update_registry=private
+            update_storage_base=https://supabase.firesideafrica.cloud/storage/v1/object/sign
+          elif [[ "$MOBILE_REGISTRY_CONTRACT" != mobile_release_v1 ]]; then
+            echo 'Unsupported registry contract; held'; exit 1
+          fi
+          flutter build apk --release --build-number="$MOBILE_BUILD_CODE" --build-name="$MOBILE_BUILD_NAME" \
+            --dart-define=UPDATE_REGISTRY="$update_registry" \
+            --dart-define=UPDATE_STORAGE_BASE="$update_storage_base" \
             --dart-define=SUPABASE_URL="$SUPABASE_URL" \
             --dart-define=SUPABASE_ANON_KEY="$SUPABASE_ANON_KEY" \
             --dart-define=PORTAL_API_BASE_URL="$PORTAL_API_BASE_URL"
-          apk_name="fireside-group-${GITHUB_REF_NAME}.apk"
-          cp build/app/outputs/flutter-apk/app-release.apk "build/app/outputs/flutter-apk/$apk_name"
-          echo "apk_name=$apk_name" >> "$GITHUB_ENV"
-
-      - name: Verify tagged APK is signed
-        if: startsWith(github.ref, 'refs/tags/v')
+          version=$(python3 -c "import re; print(re.search(r'^version:\s*([^+\s]+)', open('pubspec.yaml').read(), re.M)[1])")
+          tag="v$version"
+          apk_name="fireside-group-$tag.apk"
+          mkdir -p release
+          cp build/app/outputs/flutter-apk/app-release.apk "release/$apk_name"
+          if [[ "$MOBILE_REGISTRY_CONTRACT" == mobile_release_private_v1 ]]; then
+            # No public/signed URL in metadata; private bootstrap remains held unless explicitly dispatched.
+            # Old URL-only apps require separately approved private-capable bootstrap.
+            python3 - <<'PY'
+          import json, os, pathlib, sys
+          sys.path.insert(0, 'tool')
+          from mobile_release import Spec, private_metadata
+          s=Spec(os.environ['MOBILE_BUILD_NAME'],int(os.environ['MOBILE_BUILD_CODE']),os.environ['GITHUB_SHA'],os.environ['MOBILE_PRODUCTION_SIGNER_SHA256'])
+          apk=(pathlib.Path('release')/s.apk_name).read_bytes()
+          pathlib.Path('release/update.json').write_text(json.dumps(private_metadata(s,apk),sort_keys=True)+'\n')
+          PY
+          elif [[ "$MOBILE_REGISTRY_CONTRACT" == mobile_release_v1 ]]; then
+            dart run tool/generate_update_metadata.dart --tag "$tag" --repository "$GITHUB_REPOSITORY" \
+              --apk-name "$apk_name" --apk-path "release/$apk_name" --output release/update.json
+          else
+            echo 'Unsupported registry contract; held'; exit 1
+          fi
+      - name: Verify pinned production package and signer before artifact retention
+        env:
+          MOBILE_PRODUCTION_SIGNER_SHA256: ${{ vars.MOBILE_PRODUCTION_SIGNER_SHA256 }}
         run: |
-          apksigner=$(find "$ANDROID_HOME/build-tools" -name apksigner -type f | sort -V | tail -n 1)
-          [[ -n "$apksigner" ]] || { echo "Android apksigner was not found"; exit 1; }
-          "$apksigner" verify "build/app/outputs/flutter-apk/$apk_name"
-
-      # Keep this directly after the APK build so a later web failure does not
-      # prevent the APK from being retained by Actions.
-      - name: Upload Android APK artifact
-        uses: actions/upload-artifact@v4
+          tools=$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -n 1)
+          python3 - "$tools" <<'PY'
+          import json, os, pathlib, sys
+          sys.path.insert(0, 'tool')
+          from mobile_release import ApkVerifier, Spec
+          m=json.loads(pathlib.Path('release/update.json').read_text())
+          s=Spec(m['versionName'],m['versionCode'],os.environ['GITHUB_SHA'],os.environ.get('MOBILE_PRODUCTION_SIGNER_SHA256',''))
+          ApkVerifier(sys.argv[1]+'/apksigner',sys.argv[1]+'/aapt')((pathlib.Path('release')/s.apk_name).read_bytes(),s)
+          PY
+      - uses: actions/upload-artifact@v4
         with:
           name: fireside-group-android-${{ github.sha }}
-          path: build/app/outputs/flutter-apk/${{ env.apk_name }}
+          path: release/
           if-no-files-found: error
+      - name: Remove temporary signing files
+        if: always()
+        run: rm -f android/key.properties "$RUNNER_TEMP/fireside-release.keystore"
 
-      - name: Generate release update metadata
-        if: startsWith(github.ref, 'refs/tags/v')
-        run: |
-          git log -1 --pretty=%B > "$RUNNER_TEMP/release-notes.txt"
-          dart run tool/generate_update_metadata.dart \
-            --tag "$GITHUB_REF_NAME" \
-            --repository "$GITHUB_REPOSITORY" \
-            --apk-name "$apk_name" \
-            --apk-path "build/app/outputs/flutter-apk/$apk_name" \
-            --release-notes-file "$RUNNER_TEMP/release-notes.txt"
-
-      - name: Upload release metadata artifact
-        if: startsWith(github.ref, 'refs/tags/v')
-        uses: actions/upload-artifact@v4
+  web:
+    name: Build web separately (cannot block Android promotion)
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    needs: checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
         with:
-          name: fireside-group-release-metadata-${{ github.sha }}
-          path: update.json
-          if-no-files-found: error
-
-      - name: Build Flutter web
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+      - run: flutter pub get
+      - run: dart run build_runner build --delete-conflicting-outputs
+      - name: Build web
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
           PORTAL_API_BASE_URL: ${{ secrets.PORTAL_API_BASE_URL }}
         run: |
-          flutter build web --release \
-            --dart-define=SUPABASE_URL="$SUPABASE_URL" \
+          flutter build web --release --dart-define=SUPABASE_URL="$SUPABASE_URL" \
             --dart-define=SUPABASE_ANON_KEY="$SUPABASE_ANON_KEY" \
             --dart-define=PORTAL_API_BASE_URL="$PORTAL_API_BASE_URL"
-
-      - name: Upload web artifact
-        uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v4
         with:
           name: fireside-group-web-${{ github.sha }}
           path: build/web
           if-no-files-found: error
 
-      - name: Remove temporary signing files
-        if: always()
-        run: rm -f android/key.properties "$RUNNER_TEMP/fireside-release.keystore"
-
   release:
-    name: Publish GitHub Release
-    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
-    needs:
-      - checks
-      - build
+    name: GitHub draft exact APK -> approved storage -> scoped registry last
+    if: github.actor == 'josephndex' && github.triggering_actor == 'josephndex' && github.ref == 'refs/heads/main' && (github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.publish_android == true))
+    needs: [checks, release-tooling, build]
     runs-on: ubuntu-latest
+    environment: mobile-release
     permissions:
       contents: write
-
+      actions: read
     steps:
-      - name: Download Android APK artifact
-        uses: actions/download-artifact@v4
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: actions/download-artifact@v4
         with:
           name: fireside-group-android-${{ github.sha }}
           path: release
-
-      - name: Download update metadata artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: fireside-group-release-metadata-${{ github.sha }}
-          path: release
-
-      - name: Publish GitHub Release
+      - run: python -m pip install -r tool/requirements-release.txt
+      - name: Mount approved registry TLS CA
         env:
           GH_TOKEN: ${{ github.token }}
+          MOBILE_RELEASE_APPROVED: ${{ vars.MOBILE_RELEASE_APPROVED }}
+          MOBILE_PUBLISH_ANDROID: ${{ inputs.publish_android }}
+          MOBILE_REGISTRY_CA_PEM: ${{ vars.MOBILE_REGISTRY_CA_PEM }}
+          MOBILE_REGISTRY_DSN: ${{ secrets.MOBILE_REGISTRY_DSN }}
+        run: python tool/mobile_release.py --prepare-registry-ca
+      - name: Promote immutable signed bytes; no credential defines in Flutter
+        env:
+          GH_TOKEN: ${{ github.token }}
+          MOBILE_PUBLISH_ANDROID: ${{ inputs.publish_android }}
+          MOBILE_PUBLISH_BOOTSTRAP: ${{ inputs.publish_bootstrap }}
+          MOBILE_BOOTSTRAP_PUBLIC_APPROVED: ${{ inputs.approve_public_bootstrap }}
+          MOBILE_RELEASE_APPROVED: ${{ vars.MOBILE_RELEASE_APPROVED }}
+          MOBILE_PRODUCTION_SIGNER_SHA256: ${{ vars.MOBILE_PRODUCTION_SIGNER_SHA256 }}
+          MOBILE_STORAGE_APPROVED: ${{ vars.MOBILE_STORAGE_APPROVED }}
+          MOBILE_STORAGE_PROVIDER: ${{ vars.MOBILE_STORAGE_PROVIDER }}
+          # Exact private registry contract + native REST; legacy latest stays draft.
+          MOBILE_SUPABASE_STORAGE_ENDPOINT: ${{ vars.MOBILE_SUPABASE_STORAGE_ENDPOINT }}
+          MOBILE_SUPABASE_STORAGE_BUCKET: ${{ vars.MOBILE_SUPABASE_STORAGE_BUCKET }}
+          MOBILE_SUPABASE_STORAGE_TOKEN: ${{ secrets.MOBILE_SUPABASE_STORAGE_TOKEN }}
+          MOBILE_S3_ENDPOINT: ${{ vars.MOBILE_S3_ENDPOINT }}
+          MOBILE_S3_REGION: ${{ vars.MOBILE_S3_REGION }}
+          MOBILE_S3_BUCKET: ${{ vars.MOBILE_S3_BUCKET }}
+          MOBILE_S3_PUBLIC_BASE: ${{ vars.MOBILE_S3_PUBLIC_BASE }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.MOBILE_S3_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.MOBILE_S3_SECRET_ACCESS_KEY }}
+          AWS_SESSION_TOKEN: ${{ secrets.MOBILE_S3_SESSION_TOKEN }}
+          AWS_EC2_METADATA_DISABLED: 'true'
+          MOBILE_REGISTRY_CONTRACT: ${{ vars.MOBILE_REGISTRY_CONTRACT }}
+          MOBILE_REGISTRY_DSN: ${{ secrets.MOBILE_REGISTRY_DSN }}
         run: |
-          gh release create "$GITHUB_REF_NAME" \
-            --repo "$GITHUB_REPOSITORY" \
-            --verify-tag \
-            --title "Fireside Group $GITHUB_REF_NAME" \
-            --generate-notes \
-            release/*.apk release/update.json
+          # These names are a configuration contract, NOT evidence credentials/storage exist.
+          tools=$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -n 1)
+          [[ -x "$tools/apksigner" && -x "$tools/aapt" ]] || { echo 'Android verification tools unavailable; held'; exit 1; }
+          python tool/mobile_release.py --apk "$(printf '%s\n' release/*.apk)" --metadata release/update.json \
+            --apksigner "$tools/apksigner" --aapt "$tools/aapt"

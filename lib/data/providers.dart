@@ -16,9 +16,38 @@ import 'repositories/recent_apps_repository.dart';
 import 'services/admin_audit_log_service.dart';
 import 'services/profile_service.dart';
 import 'services/app_update_service.dart';
+import 'services/update_background_wakeup.dart';
+import 'services/update_registry.dart';
+import 'services/update_runtime.dart';
+import 'services/update_schedule.dart';
 
-final appUpdateServiceProvider = Provider<AppUpdateService>(
-  (ref) => AppUpdateService(),
+final updateRuntimeConfigProvider = Provider<UpdateRuntimeConfig>(
+  (ref) => const UpdateRuntimeConfig(),
+);
+
+final appUpdateServiceProvider = Provider<AppUpdateService>((ref) {
+  SupabaseClient? client;
+  try {
+    client = Supabase.instance.client;
+  } catch (_) {
+    /* Fail closed below. */
+  }
+  final service = createAppUpdateService(
+    ref.watch(updateRuntimeConfigProvider),
+    client: client,
+  );
+  final registry = service.registry;
+  if (registry is SupabaseUpdateRegistry) {
+    ref.onDispose(() => unawaited(registry.dispose()));
+  }
+  return service;
+});
+
+final updateScheduleProvider = Provider<UpdateSchedule>(
+  (ref) => UpdateSchedule(store: PreferencesScheduleStore()),
+);
+final updateBackgroundWakeupProvider = Provider<UpdateBackgroundWakeup>(
+  (ref) => UpdateBackgroundWakeup(),
 );
 
 final adminAuditLogServiceProvider = Provider<AdminAuditLogService>(
