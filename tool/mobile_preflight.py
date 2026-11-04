@@ -75,9 +75,13 @@ def probe_storage(storage):
     require(len(before) == APK_SIZE and hashlib.sha256(before).hexdigest() == APK_SHA,
             'baseline_mismatch')
     target = f'{storage.endpoint}/object/{storage.bucket}/{quote(KEY, safe="/")}'
-    anonymous, _, _ = storage._curl_request(target, {'Range': 'bytes=0-0'}, None,
+    anonymous, anonymous_body, _ = storage._curl_request(target, {'Range': 'bytes=0-0'}, None,
                                            method='GET', max_size=4096)
-    require(anonymous in (401, 403, 404), 'anonymous_read_not_denied')
+    denied = anonymous in (401, 403, 404)
+    if anonymous == 400:
+        envelope = json.loads(anonymous_body)
+        denied = isinstance(envelope, dict) and str(envelope.get('statusCode')) in ('401','403','404')
+    require(denied, 'preflight_anonymous_denial_held')
     # Replay only the exact verified original bytes to the exact existing key,
     # create-only. Never use a destructive sentinel or attempt a new object.
     # Finally-read runs even for a transport failure: uncertain POST is never retried.
@@ -168,7 +172,11 @@ def preflight(env):
         health = probe_health(storage)
         stage = 'storage'
         storage_result = probe_storage(storage)
-    except Exception:
+    except Exception as exc:
+        known = {'baseline_mismatch','range_proof_held','snapshot_changed','preflight_anonymous_denial_held',
+                 'original_bytes_changed','duplicate_not_denied','duplicate_envelope_held'}
+        if isinstance(exc, release.Held) and str(exc) in known:
+            raise release.Held('preflight_storage_' + str(exc)) from None
         raise release.Held('preflight_' + stage + '_held') from None
     return dict(status='verified', protected_environment=True,
                 credential_metadata='scope_and_expiry_only_not_signature_proof',
@@ -183,6 +191,8 @@ def main():
     except Exception as exc:
         # Only fixed allowlisted stage labels; never arbitrary exception content.
         allowed = {'preflight_' + s + '_held' for s in ('environment', 'token', 'sql', 'health', 'storage')}
+        allowed.update('preflight_storage_' + s for s in ('baseline_mismatch','range_proof_held','snapshot_changed',
+            'preflight_anonymous_denial_held','original_bytes_changed','duplicate_not_denied','duplicate_envelope_held'))
         error = str(exc) if isinstance(exc, release.Held) and str(exc) in allowed else 'preflight_held'
         result, code = dict(status='held', error=error,
                             employee_auth_pi_end_to_end='not_available', publication_enabled=False), 1
