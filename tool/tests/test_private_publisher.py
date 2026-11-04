@@ -24,7 +24,7 @@ class PrivatePublisherTests(unittest.TestCase):
         return r.publish(self.spec, base.APK, self.metadata() if metadata is None else metadata,
                          self.github, storage, self.registry, lambda *a: None, public_base)
 
-    def test_complete_private_success_retry_exact_locator_no_public_activation(self):
+    def test_complete_private_success_retry_exact_locator_stable_activation(self):
         with server() as (endpoint, state):
             storage = r.SupabaseStorage(endpoint, BUCKET, 'SYNTHETIC', allow_loopback_http=True)
             payload = self.publish(storage)
@@ -35,7 +35,7 @@ class PrivatePublisherTests(unittest.TestCase):
             self.assertEqual(payload['object_key'], self.spec.object_key(base.SHA))
             self.assertEqual(self.publish(storage), payload)
             self.assertEqual(list(state['objects'].values()), [base.APK])
-            self.assertNotIn('activate', self.registry.events)
+            self.assertEqual(self.registry.events[-1], 'activate')
 
     def test_mixed_modes_and_unsupported_contract_refused_before_lock_or_writes(self):
         with server() as (endpoint, state):
@@ -78,7 +78,7 @@ class PrivatePublisherTests(unittest.TestCase):
         for key in ('MOBILE_STORAGE_PROVIDER', 'MOBILE_SUPABASE_STORAGE_BUCKET', 'MOBILE_S3_PUBLIC_BASE'):
             self.assertIn(key, allocate)
         self.assertIn('private_metadata', text)
-        self.assertIn('private bootstrap remains held', text)
+        self.assertIn('normal releases become stable latest after all proofs', text)
 
     def test_workflow_private_bootstrap_script_executes_without_url(self):
         import os

@@ -11,6 +11,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 import 'package:webview_flutter_android/webview_flutter_android.dart';
 
+import '../../core/mobile_targets.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_typography.dart';
 import '../../data/models/fireside_application.dart';
@@ -51,6 +52,23 @@ String mobileGatewayPathFor(String appId) {
     return '/api/auth/sso/fireside/mobile';
   }
   return '/auth/fireside/mobile';
+}
+
+/// PTW's existing bearer gateway redirects to root (it does not accept next).
+/// Keep its identity/origin and cookie exchange, then select unified capture.
+Uri? tbtLandingRedirect(String appId, String url, {MobileTargets? targets}) {
+  final uri = Uri.tryParse(url);
+  if (appId != 'attendance-ptw' ||
+      uri == null ||
+      !WebViewSecurity(appId, targets: targets).allows(url) ||
+      (uri.path.isNotEmpty && uri.path != '/') ||
+      uri.queryParameters.containsKey('source')) {
+    return null;
+  }
+  return uri.replace(
+    path: '/',
+    queryParameters: {...uri.queryParameters, 'source': 'tbt'},
+  );
 }
 
 class AppWebViewScreen extends ConsumerStatefulWidget {
@@ -324,7 +342,15 @@ class _AppWebViewScreenState extends ConsumerState<AppWebViewScreen> {
           if (!_security.allows(request.url)) {
             return NavigationDecision.prevent;
           }
-          if (request.isMainFrame) _security.navigationStarted();
+          if (request.isMainFrame) {
+            _security.navigationStarted();
+            final landing = tbtLandingRedirect(app.id, request.url);
+            if (landing != null) {
+              // Cookie-only follow-up; never forward the SSO bearer again.
+              unawaited(controller.loadRequest(landing));
+              return NavigationDecision.prevent;
+            }
+          }
           return NavigationDecision.navigate;
         },
         onPageStarted: (_) => _security.navigationStarted(),

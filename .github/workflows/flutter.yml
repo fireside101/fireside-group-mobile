@@ -32,10 +32,10 @@ env:
 jobs:
   release-tooling:
     name: Offline release contract tests
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: '3.12'
       - run: python -m pip install -r tool/requirements-release.txt
@@ -43,13 +43,14 @@ jobs:
 
   checks:
     name: Analyze and test
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       # Executes the actual bridge JavaScript security regression under Node.
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: '22'
+          package-manager-cache: false
       - uses: subosito/flutter-action@v2
         with:
           flutter-version: ${{ env.FLUTTER_VERSION }}
@@ -65,16 +66,16 @@ jobs:
     name: Build signed Android APK
     if: github.actor == 'josephndex' && github.triggering_actor == 'josephndex' && github.ref == 'refs/heads/main' && (github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.publish_android == true))
     needs: [checks, release-tooling]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     # Owner-approved automation: main-only/no bypass, no manual reviewer deadlock.
     # Both original and rerun actors are pinned above, never read from configurable vars.
     # The explicit owner-controlled variable below keeps absent/new environments fail-closed.
     environment: mobile-release
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: '17'
@@ -85,7 +86,7 @@ jobs:
           cache: true
       - run: flutter pub get
       - run: dart run build_runner build --delete-conflicting-outputs
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: '3.12'
       - run: python -m pip install -r tool/requirements-release.txt
@@ -149,6 +150,7 @@ jobs:
             echo 'Unsupported registry contract; held'; exit 1
           fi
           flutter build apk --release --build-number="$MOBILE_BUILD_CODE" --build-name="$MOBILE_BUILD_NAME" \
+            --dart-define=MOBILE_DEPLOYMENT_ENV=production \
             --dart-define=UPDATE_REGISTRY="$update_registry" \
             --dart-define=UPDATE_STORAGE_BASE="$update_storage_base" \
             --dart-define=SUPABASE_URL="$SUPABASE_URL" \
@@ -160,7 +162,7 @@ jobs:
           mkdir -p release
           cp build/app/outputs/flutter-apk/app-release.apk "release/$apk_name"
           if [[ "$MOBILE_REGISTRY_CONTRACT" == mobile_release_private_v1 ]]; then
-            # No public/signed URL in metadata; private bootstrap remains held unless explicitly dispatched.
+            # No public/signed URL in metadata; normal releases become stable latest after all proofs.
             # Old URL-only apps require separately approved private-capable bootstrap.
             python3 - <<'PY'
           import json, os, pathlib, sys
@@ -176,6 +178,11 @@ jobs:
           else
             echo 'Unsupported registry contract; held'; exit 1
           fi
+      - name: Native archive signer and installer security tests
+        run: |
+          cd android
+          ./gradlew :app:testDebugUnitTest --console=plain --no-daemon --max-workers=2 \
+            -Dorg.gradle.jvmargs='-Xmx1536m -XX:MaxMetaspaceSize=768m'
       - name: Verify pinned production package and signer before artifact retention
         env:
           MOBILE_PRODUCTION_SIGNER_SHA256: ${{ vars.MOBILE_PRODUCTION_SIGNER_SHA256 }}
@@ -189,7 +196,7 @@ jobs:
           s=Spec(m['versionName'],m['versionCode'],os.environ['GITHUB_SHA'],os.environ.get('MOBILE_PRODUCTION_SIGNER_SHA256',''))
           ApkVerifier(sys.argv[1]+'/apksigner',sys.argv[1]+'/aapt')((pathlib.Path('release')/s.apk_name).read_bytes(),s)
           PY
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: fireside-group-android-${{ github.sha }}
           path: release/
@@ -202,9 +209,9 @@ jobs:
     name: Build web separately (cannot block Android promotion)
     if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
     needs: checks
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: subosito/flutter-action@v2
         with:
           flutter-version: ${{ env.FLUTTER_VERSION }}
@@ -221,33 +228,33 @@ jobs:
           flutter build web --release --dart-define=SUPABASE_URL="$SUPABASE_URL" \
             --dart-define=SUPABASE_ANON_KEY="$SUPABASE_ANON_KEY" \
             --dart-define=PORTAL_API_BASE_URL="$PORTAL_API_BASE_URL"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: fireside-group-web-${{ github.sha }}
           path: build/web
           if-no-files-found: error
 
   release:
-    name: GitHub draft exact APK -> approved storage -> scoped registry last
+    name: Exact APK -> private storage -> registry -> stable GitHub latest
     if: github.actor == 'josephndex' && github.triggering_actor == 'josephndex' && github.ref == 'refs/heads/main' && (github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.publish_android == true))
     needs: [checks, release-tooling, build]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     environment: mobile-release
     permissions:
       contents: write
       actions: read
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: '3.12'
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: '17'
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: fireside-group-android-${{ github.sha }}
           path: release
@@ -268,9 +275,10 @@ jobs:
           MOBILE_BOOTSTRAP_PUBLIC_APPROVED: ${{ inputs.approve_public_bootstrap }}
           MOBILE_RELEASE_APPROVED: ${{ vars.MOBILE_RELEASE_APPROVED }}
           MOBILE_PRODUCTION_SIGNER_SHA256: ${{ vars.MOBILE_PRODUCTION_SIGNER_SHA256 }}
+          MOBILE_PUBLIC_RELEASE_APPROVED: ${{ vars.MOBILE_PUBLIC_RELEASE_APPROVED }}
           MOBILE_STORAGE_APPROVED: ${{ vars.MOBILE_STORAGE_APPROVED }}
           MOBILE_STORAGE_PROVIDER: ${{ vars.MOBILE_STORAGE_PROVIDER }}
-          # Exact private registry contract + native REST; legacy latest stays draft.
+          # Exact private updater contract remains independent of stable GitHub visibility.
           MOBILE_SUPABASE_STORAGE_ENDPOINT: ${{ vars.MOBILE_SUPABASE_STORAGE_ENDPOINT }}
           MOBILE_SUPABASE_STORAGE_BUCKET: ${{ vars.MOBILE_SUPABASE_STORAGE_BUCKET }}
           MOBILE_SUPABASE_STORAGE_TOKEN: ${{ secrets.MOBILE_SUPABASE_STORAGE_TOKEN }}

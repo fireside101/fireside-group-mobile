@@ -87,9 +87,10 @@ class ApkInstallPreflightTest {
         assertArrayEquals(source.readBytes(), accepted.readBytes())
         source.writeText("changed after preflight")
         assertTrue(accepted.length() > source.length())
-        val flags = if (Build.VERSION.SDK_INT >= 28) PackageManager.GET_SIGNING_CERTIFICATES else PackageManager.GET_SIGNATURES
+        val flags = PackageManager.GET_SIGNATURES or
+            if (Build.VERSION.SDK_INT >= 28) PackageManager.GET_SIGNING_CERTIFICATES else 0
         if (Build.VERSION.SDK_INT >= 33) {
-            verify(pm).getPackageArchiveInfo(eq(accepted.path), any(PackageManager.PackageInfoFlags::class.java))
+            verify(pm).getPackageArchiveInfo(eq(accepted.path), argThat<PackageManager.PackageInfoFlags> { it.value == flags.toLong() })
         } else {
             verify(pm).getPackageArchiveInfo(accepted.path, flags)
         }
@@ -162,6 +163,21 @@ class ApkInstallPreflightTest {
         candidate = info(appId, 8, arrayOf(Signature("0102")))
         reject("SIGNATURE_MISMATCH", apk().path)
     }
+    @Test fun rejectsRotationHistoryAndLegacyFallbackOnModernAndroid() {
+        if (Build.VERSION.SDK_INT < 28) return
+        candidate = info(appId, 8, arrayOf(Signature("0304")))
+        `when`(candidate.signingInfo!!.signingCertificateHistory)
+            .thenReturn(arrayOf(Signature("0102"), Signature("0304")))
+        candidate.signatures = arrayOf(Signature("0102"))
+        reject("SIGNATURE_MISMATCH", apk().path)
+        candidate.signingInfo = null
+        reject("SIGNATURE_MISMATCH", apk().path)
+        candidate = info(appId, 8, arrayOf(Signature("0102")))
+        installed.signingInfo = null
+        installed.signatures = arrayOf(Signature("0102"))
+        reject("SIGNATURE_MISMATCH", apk().path)
+    }
+
     @Test fun acceptsExactMultipleSignerSetRegardlessOfOrder() {
         installed = info(appId, 7, arrayOf(Signature("0102"), Signature("0304")))
         candidate = info(appId, 8, arrayOf(Signature("0304"), Signature("0102")))

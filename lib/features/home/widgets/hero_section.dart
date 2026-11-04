@@ -24,19 +24,12 @@ class HeroSection extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final colors = context.appColors;
     final sessionName = ref.watch(authControllerProvider).value?.name;
-    final profileName = ref
-        .watch(profileCacheProvider)
-        .value
-        ?.details
-        ?.editable;
-    final profileFirstName = profileName?.firstName.trim() ?? '';
-    final profileLastName = profileName?.lastName.trim() ?? '';
+    final profileName =
+        ref.watch(profileCacheProvider).value?.details?.displayName.trim() ??
+        '';
     final fallbackName = (sessionName ?? '').trim();
-    final greetingName = profileFirstName.isNotEmpty
-        ? [
-            profileFirstName,
-            profileLastName,
-          ].where((part) => part.isNotEmpty).join(' ')
+    final greetingName = profileName.isNotEmpty
+        ? profileName
         : fallbackName.split(RegExp(r'\s+')).take(2).join(' ');
     final greeting = greetingName.isEmpty
         ? 'Welcome back.'

@@ -30,6 +30,11 @@ class ProfileEditableDetails {
   const ProfileEditableDetails({
     required this.firstName,
     required this.lastName,
+    this.thirdName,
+    this.hasFirstName = true,
+    this.hasThirdName = true,
+    this.hasLastName = true,
+    this.namesOnly = false,
     required this.dateOfBirth,
     required this.nationality,
     required this.nationalId,
@@ -44,6 +49,12 @@ class ProfileEditableDetails {
 
   final String firstName;
   final String lastName;
+  final String? thirdName;
+  // Preserve absent API fields on older servers and in the existing cache.
+  final bool hasFirstName;
+  final bool hasThirdName;
+  final bool hasLastName;
+  final bool namesOnly;
   final String dateOfBirth;
   final String nationality;
   final String nationalId;
@@ -56,8 +67,9 @@ class ProfileEditableDetails {
   final String contractorName;
 
   Map<String, dynamic> toJson() => {
-    'first_name': firstName,
-    'last_name': lastName,
+    if (hasFirstName) 'first_name': firstName,
+    if (hasThirdName) 'third_name': thirdName,
+    if (hasLastName) 'last_name': lastName,
     'date_of_birth': dateOfBirth,
     'nationality': nationality,
     'national_id': nationalId,
@@ -74,6 +86,13 @@ class ProfileEditableDetails {
       ProfileEditableDetails(
         firstName: _string(json['first_name']),
         lastName: _string(json['last_name']),
+        thirdName: json['third_name'] is String
+            ? json['third_name'] as String
+            : null,
+        hasFirstName: json.containsKey('first_name'),
+        hasThirdName: json.containsKey('third_name'),
+        hasLastName: json.containsKey('last_name'),
+        namesOnly: json['_namesOnly'] == true,
         dateOfBirth: _string(json['date_of_birth']),
         nationality: _string(json['nationality']),
         nationalId: _string(json['national_id']),
@@ -114,11 +133,17 @@ class PersonalDetails {
   final List<ProfileField> fields;
   final ProfileEditableDetails editable;
 
+  /// Never infer PI ordering from editable field names or widget order.
+  String get displayName => fullName;
+
   Map<String, dynamic> toJson() => {
     'fullName': fullName,
     'department': department,
     'fields': fields.map((field) => field.toJson()).toList(),
-    'editable': editable.toJson(),
+    'editable': {
+      ...editable.toJson(),
+      if (editable.namesOnly) '_namesOnly': true,
+    },
   };
 
   factory PersonalDetails.fromJson(Map<String, dynamic> json) =>

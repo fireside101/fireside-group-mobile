@@ -49,7 +49,7 @@ class BootstrapTests(unittest.TestCase):
 
     def test_published_private_retry_requires_receipt_and_prerelease(self):
         for receipt, prerelease, allowed in ((True, True, True), (False, True, False), (True, False, False)):
-            gh = r.GithubRelease(); gh.private_mode = True; gh.allow_published = receipt
+            gh = r.GithubRelease(); gh.private_mode = True; gh.bootstrap_mode = True; gh.allow_published = receipt
             api = GithubAPI(self.spec); api.apk = base.APK
             api.info.update(draft=False, prerelease=prerelease)
             with patch.object(r.subprocess, 'run', side_effect=api):

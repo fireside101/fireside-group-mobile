@@ -10,10 +10,10 @@ jobs:
   certificate:
     if: github.repository == 'fireside101/fireside-group-mobile' && github.actor == 'josephndex' && github.triggering_actor == 'josephndex' && github.ref == 'refs/heads/main' && github.event_name == 'workflow_dispatch'
     environment: mobile-release
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: '17'

@@ -27,23 +27,23 @@ jobs:
       'josephndex' && github.triggering_actor == 'josephndex' && github.ref == 'refs/heads/main'
       && github.event_name == 'workflow_dispatch' && inputs.publish_android == true
       && inputs.publish_bootstrap == true && inputs.approve_public_bootstrap == true
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     environment: mobile-release
     permissions:
       contents: write
       actions: read
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v7
       with:
         fetch-depth: 0
-    - uses: actions/setup-python@v5
+    - uses: actions/setup-python@v7
       with:
         python-version: '3.12'
-    - uses: actions/setup-java@v4
+    - uses: actions/setup-java@v6
       with:
         distribution: temurin
         java-version: '17'
-    - uses: actions/download-artifact@v4
+    - uses: actions/download-artifact@v8
       with:
         name: fireside-group-android-cd65ca3be70fbab17e9b492fa1aa9a47c4742418
         path: release

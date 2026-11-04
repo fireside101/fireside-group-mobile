@@ -1,0 +1,55 @@
+{
+  "details": {
+    "fullName": "Ada Lovelace Ngũgĩ",
+    "department": "ICT",
+    "fields": [
+      {
+        "label": "Full name",
+        "value": "Ada Lovelace Ngũgĩ"
+      },
+      {
+        "label": "National ID",
+        "value": "123"
+      },
+      {
+        "label": "Date of birth",
+        "value": "1 January 1990"
+      },
+      {
+        "label": "Nationality",
+        "value": "Kenyan"
+      },
+      {
+        "label": "Email",
+        "value": "ada@example.test"
+      },
+      {
+        "label": "Assigned city",
+        "value": "Nairobi"
+      },
+      {
+        "label": "Assigned country",
+        "value": "Kenya"
+      },
+      {
+        "label": "Contractor",
+        "value": "No"
+      }
+    ],
+    "editable": {
+      "first_name": "Ada",
+      "last_name": "Lovelace",
+      "third_name": "Ngũgĩ",
+      "date_of_birth": "1990-01-01",
+      "nationality": "Kenyan",
+      "national_id": "123",
+      "department": "ICT",
+      "phone_number": "",
+      "emergency_phone": "",
+      "assigned_city": "Nairobi",
+      "assigned_country": "Kenya",
+      "contractor": false,
+      "contractor_name": ""
+    }
+  }
+}

@@ -156,6 +156,7 @@ class DraftLookupTests(unittest.TestCase):
     def test_published_tag_success_never_lists_and_requires_receipt(self):
         self.api.info.update(draft=False, prerelease=True)
         self.gh.private_mode = True
+        self.gh.bootstrap_mode = True  # This case retries the explicitly published bootstrap.
         with patch.object(r.subprocess, 'run', side_effect=self.api):
             with self.assertRaises(r.Held): self.ensure()
             self.gh.allow_published = True

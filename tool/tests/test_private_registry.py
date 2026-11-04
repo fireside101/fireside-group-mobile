@@ -48,7 +48,8 @@ class PrivateRegistrySQLTests(sql_tests.RegistrySQLTests):
                 self.assertEqual(r.publish(*args), payload)
             self.assertEqual(payload, self.call('select mobile_release.latest()', role='mobile_release_reader'))
             self.assertEqual(list(state['objects'].values()), [base.APK])
-            self.assertNotIn('activate', events)
+            self.assertEqual(events, ['github', 'download', 'activate'] * 2)
+            self.assertNotIn('apk_url', payload)
 
     def test_private_contract_rejects_persistent_urls_wrong_locator_extra_and_size(self):
         self.reserve()

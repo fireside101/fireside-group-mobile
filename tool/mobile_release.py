@@ -92,7 +92,7 @@ def publication_mode(storage, registry, public_base):
 
 def private_metadata(spec, apk):
     # Deliberately NOT consumable by legacy URL-only clients. Bootstrap requires
-    # an independently distributed private-capable app; never publish this as latest.
+    # a private-capable app. Stable GitHub visibility does not change this feed.
     return dict(versionName=spec.version, versionCode=spec.code, apkSize=len(apk),
                 apkSha256=hashlib.sha256(apk).hexdigest(), deliveryContract=PRIVATE_CONTRACT)
 
@@ -112,6 +112,8 @@ def bootstrap_requested(env):
 def publish(spec, apk, metadata, github, storage, registry, verify, public_base, *, bootstrap=False):
     private = publication_mode(storage, registry, public_base)
     require(type(bootstrap) is bool and (not bootstrap or private), 'bootstrap is private-contract only')
+    if isinstance(github, GithubRelease) and not bootstrap:
+        github.check_public_release_approval()  # Before reservation or any writes.
     if private:
         require(json_equal(metadata, private_metadata(spec, apk)), 'private bootstrap metadata mismatch; no URLs allowed')
     # Serialize cloud finalization across production CLI callers, not just CI runs.
@@ -141,6 +143,7 @@ def _publish(spec, apk, metadata, github, storage, registry, verify, public_base
     registry.reserve(spec)
     if isinstance(github, GithubRelease):
         github.private_mode = private
+        github.bootstrap_mode = bootstrap
         github.allow_published = json_equal(registry.read(spec.commit), payload)
     github.ensure(spec, apk, metadata)
     remote = github.download(spec)
@@ -152,10 +155,10 @@ def _publish(spec, apk, metadata, github, storage, registry, verify, public_base
     registry.advertise(payload)
     require(json_equal(registry.read(spec.commit), payload), 'registry readback mismatch; success not established')
     require(json_equal(registry.read_latest(), payload), 'not current registry latest; no legacy activation')
-    if not private:
-        github.activate(spec)  # Private legacy bootstrap is deliberately held (draft only).
-    elif bootstrap:
+    if bootstrap:
         github.activate_bootstrap(spec)  # Explicit private handoff, never legacy latest.
+    else:
+        github.activate(spec)  # Approved normal releases are stable latest, private updater retained.
     return payload
 
 
@@ -207,11 +210,19 @@ class GithubRelease:
     """gh credentials remain in server environment; never clobber existing assets."""
     allow_published = False
     private_mode = False
+    bootstrap_mode = False
 
-    def __init__(self, *, public_bootstrap_approved=False):
+    def __init__(self, *, public_bootstrap_approved=False, public_release_approved=False):
         require(type(public_bootstrap_approved) is bool, 'invalid public bootstrap approval')
+        require(type(public_release_approved) is bool, 'invalid public release approval')
         self.public_bootstrap_approved = public_bootstrap_approved
+        self.public_release_approved = public_release_approved
         self._release_ids = {}
+
+    def check_public_release_approval(self):
+        repo = json.loads(run(['gh', 'api', f'repos/{REPOSITORY}']))
+        require(repo.get('private') is True or (repo.get('private') is False and self.public_release_approved),
+                'stable release requires private repository or explicit public APK disclosure approval')
 
     def _release_identity(self, spec, info, release_id=None):
         require(isinstance(info, dict) and type(info.get('id')) is int and info['id'] > 0
@@ -298,7 +309,7 @@ class GithubRelease:
             info = self._lookup_release(spec)
         if info is None:
             raise Held('created GitHub draft not found; held')
-        require((info['draft'] or (self.allow_published and info['prerelease'] == self.private_mode))
+        require((info['draft'] or (self.allow_published and info['prerelease'] == self.bootstrap_mode))
                 and (not info['draft'] or not info['prerelease']),
                 'unverified public release must not precede registry receipt')
         # Resolve peeled tag to source rather than trusting mutable target_commitish.
@@ -342,6 +353,7 @@ class GithubRelease:
                 and info.get('prerelease') is True, 'bootstrap publication readback mismatch')
 
     def activate(self, spec):
+        self.check_public_release_approval()
         info = self._lookup_release(spec)
         if info is None:
             raise Held('activation release absent')
@@ -349,7 +361,12 @@ class GithubRelease:
         require(tag_commit == spec.commit or (info.get('draft') is True and tag_commit is None
                 and info.get('target_commitish') == spec.commit), 'activation source mismatch')
         run(['gh', 'release', 'edit', spec.tag, '--repo', REPOSITORY,
-             '--draft=false', '--latest=true'])
+             '--draft=false', '--prerelease=false', '--latest=true',
+             '--notes', f'Android {spec.version} ({spec.code}). Install over the existing app without uninstalling. '
+             'update.json is an integrity receipt, not a legacy URL-only updater feed.'])
+        exact = self._release_by_id(spec, info['id'])
+        require(exact['draft'] is False and exact['prerelease'] is False,
+                'stable publication exact release readback mismatch')
         info = json.loads(run(['gh', 'api', f'repos/{REPOSITORY}/releases/latest']))
         require(self.tag_commit(spec) == spec.commit, 'published source readback mismatch')
         require(info.get('tag_name') == spec.tag and not info.get('draft', True)
@@ -740,9 +757,12 @@ def main():
     public_bootstrap = os.environ.get('MOBILE_BOOTSTRAP_PUBLIC_APPROVED', '')
     require(public_bootstrap in ('', 'false', 'true') and (public_bootstrap != 'true' or bootstrap),
             'public disclosure approval requires explicit bootstrap dispatch')
-    payload = publish(spec, apk, metadata, GithubRelease(public_bootstrap_approved=public_bootstrap == 'true'), storage, registry,
+    public_release = os.environ.get('MOBILE_PUBLIC_RELEASE_APPROVED', '')
+    require(public_release in ('', 'false', 'true'), 'invalid public release approval')
+    payload = publish(spec, apk, metadata, GithubRelease(public_bootstrap_approved=public_bootstrap == 'true',
+                      public_release_approved=public_release == 'true'), storage, registry,
                       ApkVerifier(args.apksigner, args.aapt), public_base, bootstrap=bootstrap)
-    print(json.dumps({'status': ('private-bootstrap-published' if bootstrap else 'private-registry-verified-bootstrap-held') if registry.contract == PRIVATE_CONTRACT
+    print(json.dumps({'status': ('private-bootstrap-published' if bootstrap else 'private-registry-and-stable-latest-verified') if registry.contract == PRIVATE_CONTRACT
                      else 'verified', 'versionCode': spec.code, 'sha256': payload['sha256']}))
 
 if __name__ == '__main__':

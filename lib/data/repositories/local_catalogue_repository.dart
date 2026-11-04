@@ -1,3 +1,4 @@
+import '../../core/mobile_targets.dart';
 import '../models/fireside_application.dart';
 import 'catalogue_repository.dart';
 
@@ -7,7 +8,24 @@ class LocalCatalogueRepository implements CatalogueRepository {
   Future<List<FiresideApplication>> fetchCatalogue() async => catalogue;
 }
 
-const List<FiresideApplication> catalogue = [
+final List<FiresideApplication> catalogue = catalogueFor(
+  MobileTargets.fromEnvironment(),
+);
+
+/// Only the stable TBT entry is rebound; identities and other apps are retained.
+List<FiresideApplication> catalogueFor(MobileTargets targets) =>
+    List.unmodifiable(
+      _productionCatalogue.map(
+        (app) => app.id == 'attendance-ptw'
+            ? app.copyWith(
+                url: '${targets.tbtOrigin}/',
+                healthUrl: '${targets.tbtOrigin}/healthz',
+              )
+            : app,
+      ),
+    );
+
+const List<FiresideApplication> _productionCatalogue = [
   FiresideApplication(
     id: 'warehouse',
     name: 'Warehouse',
@@ -94,14 +112,22 @@ const List<FiresideApplication> catalogue = [
   ),
   FiresideApplication(
     id: 'attendance-ptw',
-    name: 'Attendance PTW',
+    name: 'TBT',
     department: 'Operations',
-    description: 'Attendance & permits to work',
+    description: 'Toolbox talks, attendance & permits to work',
     category: 'Platform Services',
     url: 'https://ptw.firesideafrica.cloud/',
     healthUrl: 'https://ptw.firesideafrica.cloud/healthz',
     repository: 'attendance-ptw',
-    keywords: ['attendance', 'ptw', 'permits', 'field'],
+    keywords: [
+      'tbt',
+      'toolbox talks',
+      'attendance ptw',
+      'attendance',
+      'ptw',
+      'permits',
+      'field',
+    ],
   ),
   FiresideApplication(
     id: 'maintenance-tracker',

@@ -1,11 +1,15 @@
 import 'dart:math';
 
+import '../../core/mobile_targets.dart';
 import '../../data/repositories/local_catalogue_repository.dart';
 
 /// Only bundled, reviewed origins are trusted; remote catalogue URLs are data.
 class WebViewSecurity {
-  WebViewSecurity(String appId)
-    : _approved = catalogue.where((app) => app.id == appId).firstOrNull?.url,
+  WebViewSecurity(String appId, {MobileTargets? targets})
+    : _approved = (targets == null ? catalogue : catalogueFor(targets))
+          .where((app) => app.id == appId)
+          .firstOrNull
+          ?.url,
       _nativeApproved = appId == 'attendance-ptw';
 
   final String? _approved;

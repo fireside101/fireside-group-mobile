@@ -125,6 +125,74 @@ attributes for test-only helper activities. Resource-free Robolectric tests avoi
 a Flutter/AGP host-test asset task dependency issue. Existing AGP/Kotlin plugin
 deprecation and JVM instrumentation warnings do not fail the gates.
 
+## Archive signing metadata regression (SIGNATURE_MISMATCH)
+
+Root cause: AOSP Android 9/API 28 and Android 13/API 33 archive parsing calls
+`PackageParser.collectCertificates(pkg, false)` only when `GET_SIGNATURES` is
+present. `GET_SIGNING_CERTIFICATES` alone parses the manifest but leaves
+`signingInfo` null. Installed-package lookup has different semantics: its signing
+identity is already collected. This is not an unknown-app installation permission
+issue (`REQUEST_INSTALL_PACKAGES` and `canRequestPackageInstalls()` control installer
+admission, not archive certificate collection).
+
+Archive queries now request **both** flags on API 28+; installed queries retain
+the modern flag. API 24–27 retains `GET_SIGNATURES`. Modern comparisons still use
+only `SigningInfo.apkContentsSigners`: no legacy/history fallback, rotation
+acceptance, caller-supplied signer trust or permission bypass was introduced.
+
+References inspected:
+- https://github.com/aosp-mirror/platform_frameworks_base/blob/android-9.0.0_r1/core/java/android/content/pm/PackageManager.java
+- https://github.com/aosp-mirror/platform_frameworks_base/blob/android-13.0.0_r1/core/java/android/content/pm/PackageManager.java
+
+`ApkArchiveSigningTest` bypasses Robolectric's canned archive shadow and synthetic
+SigningInfo fields, executing Android's real parser and certificate verification
+on API 28/33. A narrow file-I/O shadow substitutes JVM positional reads for
+Android's unavailable `DirectByteBuffer` constructor; it does not substitute
+certificate bytes or verification results. A tampered signed fixture is rejected.
+The committed small APK fixture contains no app code or production private key;
+it was generated with a disposable test-only key and a minimal code-10 manifest.
+
+Before the production fix, both real-framework acceptance cases failed with the
+same `APK signing identity does not match the installed app` exception. The flag
+semantics cases passed, proving modern-only queries lacked metadata and combined
+queries populated it. The same red result was reproduced with the actual retained
+production v1.0.9 and v1.0.10 APKs, not only the small fixture. After the fix:
+- Full native host suite: **97 tests, zero failures/errors/skips** (57 preflight,
+  34 channel, 6 real-framework archive cases).
+- `:app:assembleDebugAndroidTest`: successful compilation; not device execution.
+- Actual production APK archive run: **6 tests, zero failures/errors/skips**.
+  It parses code 9 as the installed baseline and code 10 as the update.
+
+For a retained-production-artifact run, set these before the archive test command
+(use a new filtered test invocation so Gradle does not reuse prior test results):
+
+```sh
+export APK_SIGNING_BASELINE=/home/nderitu/.hermes/cache/scratch/mobile-bootstrap-1.0.9/fireside-group-v1.0.9.apk
+export APK_SIGNING_UPDATE=/home/nderitu/.hermes/cache/scratch/mobile-release-1.0.10/fireside-group-v1.0.10.apk
+./gradlew :app:testDebugUnitTest --tests '*ApkArchiveSigningTest' \
+  --console=plain --no-daemon --max-workers=2 \
+  -Dorg.gradle.jvmargs='-Xmx1536m -XX:MaxMetaspaceSize=768m'
+```
+
+Final gates used an identical Android-source snapshot at
+`/home/nderitu/.hermes/cache/scratch/native-signing-isolated-project` because
+concurrent Flutter tooling repeatedly reset the shared checkout's ignored
+`android/local.properties` to `/usr/lib/android-sdk`. Scratch SDK/JDK paths above
+were preserved in the isolated copy. Earlier production-artifact red and green
+runs executed in the original checkout. Logs are retained in scratch as
+`native-signing-production-red.log`, `native-signing-production-green.log`,
+`native-signing-fixture-green.log`, and `native-signing-production-final.log`.
+
+The existing bootstrap runs its own old native gate **before** installing any new
+APK, so a corrected future APK cannot repair that gate through the broken in-app
+flow on affected Android versions. Safest recovery is an approved, independently
+verified newer APK with the unchanged package and production signer, opened via
+Android's browser/Files installer **over the installed app, without uninstalling**.
+Installing the existing unfixed code-10 APK externally would not repair future
+in-app installs. After a fixed manual upgrade, verify retained login/data and a
+subsequent higher-code in-app update on a real phone. No phone/emulator installation,
+permission interaction, session survival or performance proof is claimed here.
+
 ## Errors and device acceptance
 
 Validation failures return fixed `PlatformException` codes/messages with null

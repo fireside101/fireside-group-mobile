@@ -27,11 +27,14 @@ class _AppHeaderState extends ConsumerState<AppHeader> {
   Widget build(BuildContext context) {
     final colors = context.appColors;
     final session = ref.watch(authControllerProvider).value;
-    final name = session?.name.trim().isNotEmpty == true
+    final cachedProfile = ref.watch(profileCacheProvider).value;
+    final profileName = cachedProfile?.details?.displayName.trim() ?? '';
+    final name = profileName.isNotEmpty
+        ? profileName
+        : session?.name.trim().isNotEmpty == true
         ? session!.name.trim()
         : 'Fireside user';
     final initial = name.characters.first.toUpperCase();
-    final cachedProfile = ref.watch(profileCacheProvider).value;
     final photoUrl = cachedProfile?.avatarUrl.isNotEmpty == true
         ? cachedProfile!.avatarUrl
         : session?.photoUrl;

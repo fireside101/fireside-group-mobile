@@ -22,6 +22,7 @@ class ProfileScreen extends ConsumerStatefulWidget {
 class _ProfileScreenState extends ConsumerState<ProfileScreen> {
   final _formKey = GlobalKey<FormState>();
   final _firstName = TextEditingController();
+  final _thirdName = TextEditingController();
   final _lastName = TextEditingController();
   final _dateOfBirth = TextEditingController();
   final _nationality = TextEditingController();
@@ -59,6 +60,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
   void dispose() {
     for (final controller in [
       _firstName,
+      _thirdName,
       _lastName,
       _dateOfBirth,
       _nationality,
@@ -104,8 +106,8 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
               padding: const EdgeInsets.fromLTRB(18, 28, 18, 36),
               children: [
                 _ProfileHero(
-                  name: _details?.fullName.isNotEmpty == true
-                      ? _details!.fullName
+                  name: _details?.displayName.isNotEmpty == true
+                      ? _details!.displayName
                       : name,
                   email: session?.email ?? 'Sign in to continue',
                   department: _details?.department ?? '',
@@ -131,6 +133,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                     editing: _editing,
                     formKey: _formKey,
                     firstName: _firstName,
+                    thirdName: _thirdName,
                     lastName: _lastName,
                     dateOfBirth: _dateOfBirth,
                     nationality: _nationality,
@@ -159,114 +162,122 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                         setState(() => _contractorName = value ?? ''),
                   ),
                   const SizedBox(height: 20),
-                  _PictureCard(
-                    initial: initial,
-                    photoUrl: photoUrl,
-                    uploading: _uploading,
-                    onUpload: _uploadPicture,
-                    onPhotoTap: photoUrl == null || photoUrl.isEmpty
-                        ? null
-                        : () => _showExpandedProfilePicture(context, photoUrl),
-                    onRemove: photoUrl == null || photoUrl.isEmpty
-                        ? null
-                        : _removePicture,
-                  ),
+                  if (_details?.editable.namesOnly != true)
+                    _PictureCard(
+                      initial: initial,
+                      photoUrl: photoUrl,
+                      uploading: _uploading,
+                      onUpload: _uploadPicture,
+                      onPhotoTap: photoUrl == null || photoUrl.isEmpty
+                          ? null
+                          : () =>
+                                _showExpandedProfilePicture(context, photoUrl),
+                      onRemove: photoUrl == null || photoUrl.isEmpty
+                          ? null
+                          : _removePicture,
+                    ),
                 ],
                 const SizedBox(height: 20),
-                _ProfileCard(
-                  padding: EdgeInsets.zero,
-                  child: Theme(
-                    data: Theme.of(context)
-                        .copyWith(dividerColor: Colors.transparent),
-                    child: ExpansionTile(
-                      initiallyExpanded: _passwordOpen,
-                      onExpansionChanged: (open) =>
-                          setState(() => _passwordOpen = open),
-                      tilePadding: const EdgeInsets.symmetric(horizontal: 22),
-                      childrenPadding: const EdgeInsets.fromLTRB(22, 0, 22, 22),
-                      leading: Icon(
-                        LucideIcons.keyRound,
-                        color: colors.primary,
-                      ),
-                      title: Text(
-                        'Change password',
-                        style: Theme.of(context).textTheme.titleMedium
-                            ?.copyWith(fontWeight: FontWeight.w700),
-                      ),
-                      children: [
-                        Form(
-                          key: _passwordFormKey,
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.stretch,
-                            children: [
-                              Text(
-                                'Choose a new password for signing in to the Fireside Group portal.',
-                                style: Theme.of(context).textTheme.bodyMedium
-                                    ?.copyWith(
-                                      color: colors.muted,
-                                      height: 1.45,
-                                    ),
-                              ),
-                              const SizedBox(height: 16),
-                              TextFormField(
-                                controller: _newPassword,
-                                obscureText: true,
-                                enabled: !_changingPassword,
-                                autofillHints: const [
-                                  AutofillHints.newPassword,
-                                ],
-                                decoration: const InputDecoration(
-                                  labelText: 'New password',
-                                  border: OutlineInputBorder(),
-                                ),
-                                validator: (value) {
-                                  if ((value ?? '').length < 8) {
-                                    return 'Password must be at least 8 characters.';
-                                  }
-                                  return null;
-                                },
-                              ),
-                              const SizedBox(height: 12),
-                              TextFormField(
-                                controller: _confirmPassword,
-                                obscureText: true,
-                                enabled: !_changingPassword,
-                                autofillHints: const [
-                                  AutofillHints.newPassword,
-                                ],
-                                decoration: const InputDecoration(
-                                  labelText: 'Confirm new password',
-                                  border: OutlineInputBorder(),
-                                ),
-                                validator: (value) {
-                                  if (value != _newPassword.text) {
-                                    return 'Passwords do not match.';
-                                  }
-                                  return null;
-                                },
-                              ),
-                              const SizedBox(height: 16),
-                              FilledButton(
-                                onPressed: _changingPassword
-                                    ? null
-                                    : _changePassword,
-                                child: _changingPassword
-                                    ? const SizedBox(
-                                        width: 20,
-                                        height: 20,
-                                        child: CircularProgressIndicator(
-                                          strokeWidth: 2,
-                                        ),
-                                      )
-                                    : const Text('Update password'),
-                              ),
-                            ],
-                          ),
+                if (_details?.editable.namesOnly != true)
+                  _ProfileCard(
+                    padding: EdgeInsets.zero,
+                    child: Theme(
+                      data: Theme.of(context)
+                          .copyWith(dividerColor: Colors.transparent),
+                      child: ExpansionTile(
+                        initiallyExpanded: _passwordOpen,
+                        onExpansionChanged: (open) =>
+                            setState(() => _passwordOpen = open),
+                        tilePadding: const EdgeInsets.symmetric(horizontal: 22),
+                        childrenPadding: const EdgeInsets.fromLTRB(
+                          22,
+                          0,
+                          22,
+                          22,
                         ),
-                      ],
+                        leading: Icon(
+                          LucideIcons.keyRound,
+                          color: colors.primary,
+                        ),
+                        title: Text(
+                          'Change password',
+                          style: Theme.of(context).textTheme.titleMedium
+                              ?.copyWith(fontWeight: FontWeight.w700),
+                        ),
+                        children: [
+                          Form(
+                            key: _passwordFormKey,
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              children: [
+                                Text(
+                                  'Choose a new password for signing in to the Fireside Group portal.',
+                                  style: Theme.of(context).textTheme.bodyMedium
+                                      ?.copyWith(
+                                        color: colors.muted,
+                                        height: 1.45,
+                                      ),
+                                ),
+                                const SizedBox(height: 16),
+                                TextFormField(
+                                  controller: _newPassword,
+                                  obscureText: true,
+                                  enabled: !_changingPassword,
+                                  autofillHints: const [
+                                    AutofillHints.newPassword,
+                                  ],
+                                  decoration: const InputDecoration(
+                                    labelText: 'New password',
+                                    border: OutlineInputBorder(),
+                                  ),
+                                  validator: (value) {
+                                    if ((value ?? '').length < 8) {
+                                      return 'Password must be at least 8 characters.';
+                                    }
+                                    return null;
+                                  },
+                                ),
+                                const SizedBox(height: 12),
+                                TextFormField(
+                                  controller: _confirmPassword,
+                                  obscureText: true,
+                                  enabled: !_changingPassword,
+                                  autofillHints: const [
+                                    AutofillHints.newPassword,
+                                  ],
+                                  decoration: const InputDecoration(
+                                    labelText: 'Confirm new password',
+                                    border: OutlineInputBorder(),
+                                  ),
+                                  validator: (value) {
+                                    if (value != _newPassword.text) {
+                                      return 'Passwords do not match.';
+                                    }
+                                    return null;
+                                  },
+                                ),
+                                const SizedBox(height: 16),
+                                FilledButton(
+                                  onPressed: _changingPassword
+                                      ? null
+                                      : _changePassword,
+                                  child: _changingPassword
+                                      ? const SizedBox(
+                                          width: 20,
+                                          height: 20,
+                                          child: CircularProgressIndicator(
+                                            strokeWidth: 2,
+                                          ),
+                                        )
+                                      : const Text('Update password'),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                   ),
-                ),
                 const SizedBox(height: 20),
                 _ProfileCard(
                   padding: const EdgeInsets.all(16),
@@ -326,6 +337,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
 
   void _fillForm(ProfileEditableDetails value) {
     _firstName.text = value.firstName;
+    _thirdName.text = value.thirdName ?? '';
     _lastName.text = value.lastName;
     _dateOfBirth.text = value.dateOfBirth;
     _nationality.text = value.nationality;
@@ -357,6 +369,14 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     final value = ProfileEditableDetails(
       firstName: _firstName.text.trim(),
       lastName: _lastName.text.trim(),
+      thirdName:
+          _thirdName.text.trim().isEmpty && _details?.editable.thirdName == null
+          ? null
+          : _thirdName.text.trim(),
+      hasFirstName: _details?.editable.hasFirstName ?? false,
+      hasThirdName: _details?.editable.hasThirdName ?? false,
+      hasLastName: _details?.editable.hasLastName ?? false,
+      namesOnly: _details?.editable.namesOnly ?? false,
       dateOfBirth: _dateOfBirth.text.trim(),
       nationality: _nationality.text.trim(),
       nationalId: _nationalId.text.trim(),
@@ -604,6 +624,7 @@ class _PersonalDetailsCard extends StatelessWidget {
     required this.editing,
     required this.formKey,
     required this.firstName,
+    required this.thirdName,
     required this.lastName,
     required this.dateOfBirth,
     required this.nationality,
@@ -631,6 +652,7 @@ class _PersonalDetailsCard extends StatelessWidget {
   final bool editing;
   final GlobalKey<FormState> formKey;
   final TextEditingController firstName;
+  final TextEditingController thirdName;
   final TextEditingController lastName;
   final TextEditingController dateOfBirth;
   final TextEditingController nationality;
@@ -678,62 +700,79 @@ class _PersonalDetailsCard extends StatelessWidget {
               key: formKey,
               child: Column(
                 children: [
-                  _twoFields(
-                    context,
-                    _field(firstName, 'First name'),
-                    _field(lastName, 'Last name'),
-                  ),
-                  const SizedBox(height: 12),
-                  _twoFields(
-                    context,
-                    _field(dateOfBirth, 'Date of birth', hint: 'YYYY-MM-DD'),
-                    _field(nationality, 'Nationality'),
-                  ),
-                  const SizedBox(height: 12),
-                  _twoFields(
-                    context,
-                    _field(nationalId, 'National ID'),
-                    _select(
-                      'Department',
-                      department,
-                      options.department,
-                      onDepartmentChanged,
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  _twoFields(
-                    context,
-                    _field(phone, 'Phone number', required: false),
+                  if (details!.editable.hasFirstName)
+                    _field(firstName, 'First name', maxLength: 80),
+                  if (details!.editable.hasLastName) ...[
+                    const SizedBox(height: 12),
+                    _field(lastName, 'Last name', maxLength: 80),
+                  ],
+                  if (details!.editable.hasThirdName) ...[
+                    const SizedBox(height: 12),
                     _field(
-                      emergencyPhone,
-                      'Emergency contact',
+                      thirdName,
+                      'Third name',
                       required: false,
+                      maxLength: 80,
                     ),
-                  ),
-                  const SizedBox(height: 12),
-                  _twoFields(
-                    context,
-                    _select('Assigned city', city, options.city, onCityChanged),
+                  ],
+                  if (!details!.editable.namesOnly) ...[
+                    const SizedBox(height: 12),
+                    _twoFields(
+                      context,
+                      _field(dateOfBirth, 'Date of birth', hint: 'YYYY-MM-DD'),
+                      _field(nationality, 'Nationality'),
+                    ),
+                    const SizedBox(height: 12),
+                    _twoFields(
+                      context,
+                      _field(nationalId, 'National ID'),
+                      _select(
+                        'Department',
+                        department,
+                        options.department,
+                        onDepartmentChanged,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    _twoFields(
+                      context,
+                      _field(phone, 'Phone number', required: false),
+                      _field(
+                        emergencyPhone,
+                        'Emergency contact',
+                        required: false,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    _twoFields(
+                      context,
+                      _select(
+                        'Assigned city',
+                        city,
+                        options.city,
+                        onCityChanged,
+                      ),
+                      _select(
+                        'Assigned country',
+                        country,
+                        options.country,
+                        onCountryChanged,
+                      ),
+                    ),
+                    CheckboxListTile(
+                      contentPadding: EdgeInsets.zero,
+                      value: contractor,
+                      onChanged: onContractorChanged,
+                      title: const Text('Contractor'),
+                      controlAffinity: ListTileControlAffinity.leading,
+                    ),
                     _select(
-                      'Assigned country',
-                      country,
-                      options.country,
-                      onCountryChanged,
+                      'Contractor name',
+                      contractorName,
+                      options.contractor,
+                      onContractorNameChanged,
                     ),
-                  ),
-                  CheckboxListTile(
-                    contentPadding: EdgeInsets.zero,
-                    value: contractor,
-                    onChanged: onContractorChanged,
-                    title: const Text('Contractor'),
-                    controlAffinity: ListTileControlAffinity.leading,
-                  ),
-                  _select(
-                    'Contractor name',
-                    contractorName,
-                    options.contractor,
-                    onContractorNameChanged,
-                  ),
+                  ],
                   const SizedBox(height: 18),
                   Row(
                     children: [
@@ -811,14 +850,18 @@ class _PersonalDetailsCard extends StatelessWidget {
     String label, {
     String? hint,
     bool required = true,
+    int? maxLength,
   }) => TextFormField(
     controller: controller,
     decoration: InputDecoration(labelText: label, hintText: hint),
-    validator: required
-        ? (value) => value == null || value.trim().isEmpty
-              ? '$label is required.'
-              : null
-        : null,
+    validator: (value) {
+      final text = (value ?? '').trim();
+      if (required && text.isEmpty) return '$label is required.';
+      if (maxLength != null && text.length > maxLength) {
+        return '$label must be $maxLength characters or fewer.';
+      }
+      return null;
+    },
   );
 
   Widget _select(
@@ -928,7 +971,7 @@ class _ProfileCard extends StatelessWidget {
           ),
         ],
       ),
-      child: child,
+      child: Material(type: MaterialType.transparency, child: child),
     );
   }
 }

@@ -127,10 +127,16 @@ internal class ApkInstallPreflight(
         get() = if (Build.VERSION.SDK_INT >= 28) PackageManager.GET_SIGNING_CERTIFICATES else PackageManager.GET_SIGNATURES
 
     @Suppress("DEPRECATION")
-    private fun archiveInfo(file: File): PackageInfo? = if (Build.VERSION.SDK_INT >= 33) {
-        packageManager.getPackageArchiveInfo(file.path, PackageManager.PackageInfoFlags.of(signingFlags.toLong()))
-    } else {
-        packageManager.getPackageArchiveInfo(file.path, signingFlags)
+    private fun archiveInfo(file: File): PackageInfo? {
+        // Android 28–33's archive parser collects certificates only when GET_SIGNATURES
+        // is set, even when GET_SIGNING_CERTIFICATES requests modern SigningInfo.
+        // Request both, but still compare only apkContentsSigners (never legacy/history).
+        val archiveFlags = signingFlags or PackageManager.GET_SIGNATURES
+        return if (Build.VERSION.SDK_INT >= 33) {
+            packageManager.getPackageArchiveInfo(file.path, PackageManager.PackageInfoFlags.of(archiveFlags.toLong()))
+        } else {
+            packageManager.getPackageArchiveInfo(file.path, archiveFlags)
+        }
     }
 
     @Suppress("DEPRECATION")
