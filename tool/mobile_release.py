@@ -161,7 +161,21 @@ def _publish(spec, apk, metadata, github, storage, registry, verify, public_base
 
 def run(args):
     result = subprocess.run(args, capture_output=True, text=True, check=False, timeout=180)
-    require(result.returncode == 0, 'external verification/asset command failed')
+    if result.returncode:
+        operation = None
+        if Path(args[0]).name in ('apksigner','aapt','git'):
+            operation = Path(args[0]).name
+        elif args[:3] in (['gh','release','create'],['gh','release','download'],['gh','release','edit']):
+            operation = 'gh_release_' + args[2]
+        elif args[:2] == ['gh','api']:
+            operation = 'gh_api'
+        if operation:
+            reason = 'refused'
+            for needle, label in [('Resource not accessible','permission_denied'),('HTTP 403','http_403'),('HTTP 422','http_422'),('unknown flag','unsupported_flag')]:
+                if needle in result.stderr:
+                    reason=label;break
+            raise Held('external_' + operation + '_' + reason)
+        raise Held('external verification/asset command failed')
     return result.stdout
 
 class ApkVerifier:
