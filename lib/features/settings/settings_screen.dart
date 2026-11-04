@@ -12,6 +12,7 @@ import 'app_update_prompt.dart';
 import '../auth/auth_controller.dart';
 import '../shell/app_bottom_nav.dart';
 import '../shell/app_header.dart';
+import '../shell/installed_version_label.dart';
 
 /// Appearance and account preferences.
 class SettingsScreen extends ConsumerWidget {
@@ -86,23 +87,36 @@ class SettingsScreen extends ConsumerWidget {
                   ),
                   const SizedBox(height: 12),
                 ],
-                if (canCheckForUpdates) ...[
-                  _SettingsCard(
-                    icon: LucideIcons.download,
-                    title: 'Application',
-                    child: ListTile(
-                      contentPadding: EdgeInsets.zero,
-                      leading: Icon(
-                        LucideIcons.refreshCw,
-                        color: colors.accent,
+                _SettingsCard(
+                  icon: LucideIcons.download,
+                  title: 'Application',
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const ListTile(
+                        contentPadding: EdgeInsets.zero,
+                        title: Text('Installed version'),
+                        subtitle: InstalledVersionLabel(),
                       ),
-                      title: const Text('Check for updates'),
-                      subtitle: const Text('Check the latest Android release'),
-                      onTap: () => _checkForUpdates(context, ref),
-                    ),
+                      if (canCheckForUpdates) ...[
+                        const Divider(height: 1),
+                        ListTile(
+                          contentPadding: EdgeInsets.zero,
+                          leading: Icon(
+                            LucideIcons.refreshCw,
+                            color: colors.accent,
+                          ),
+                          title: const Text('Check for updates'),
+                          subtitle: const Text(
+                            'Check the latest Android release',
+                          ),
+                          onTap: () => _checkForUpdates(context, ref),
+                        ),
+                      ],
+                    ],
                   ),
-                  const SizedBox(height: 12),
-                ],
+                ),
+                const SizedBox(height: 12),
                 _SettingsCard(
                   icon: LucideIcons.logOut,
                   title: 'Account',
@@ -191,30 +205,34 @@ class _SettingsCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.appColors;
-    return Container(
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: colors.surface,
+    return Material(
+      color: colors.surface,
+      shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: colors.border),
+        side: BorderSide(color: colors.border),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Icon(icon, color: colors.accent, size: 18),
-              const SizedBox(width: 10),
-              Text(
-                title,
-                style: Theme.of(context).textTheme.titleMedium
-                    ?.copyWith(fontWeight: FontWeight.w700),
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          child,
-        ],
+      child: Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(icon, color: colors.accent, size: 18),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    title,
+                    style: Theme.of(context).textTheme.titleMedium
+                        ?.copyWith(fontWeight: FontWeight.w700),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            child,
+          ],
+        ),
       ),
     );
   }

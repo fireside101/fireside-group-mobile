@@ -6,6 +6,7 @@ import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_typography.dart';
 import '../../data/providers.dart';
 import '../auth/auth_controller.dart';
+import 'installed_version_label.dart';
 
 /// Sticky top bar with the brand mark and home link.
 class AppHeader extends ConsumerStatefulWidget {
@@ -44,27 +45,34 @@ class _AppHeaderState extends ConsumerState<AppHeader> {
         ),
         child: SafeArea(
           bottom: false,
-          child: SizedBox(
-            height: 64,
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(minHeight: 64),
             child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 20),
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
               child: Row(
                 children: [
-                  InkWell(
-                    onTap: () => context.go('/'),
-                    borderRadius: BorderRadius.circular(8),
-                    child: Row(
-                      children: [
-                        Text(
-                          'Fireside Group',
-                          style: AppTypography.titleLarge().copyWith(
-                            color: colors.charcoal,
+                  Expanded(
+                    child: InkWell(
+                      onTap: () => context.go('/'),
+                      borderRadius: BorderRadius.circular(8),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Fireside Group',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: AppTypography.titleLarge().copyWith(
+                              color: colors.charcoal,
+                            ),
                           ),
-                        ),
-                      ],
+                          const InstalledVersionLabel(compact: true),
+                        ],
+                      ),
                     ),
                   ),
-                  const Spacer(),
+                  const SizedBox(width: 12),
                   Semantics(
                     button: true,
                     label: 'Open profile',

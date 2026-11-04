@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 
 import 'models/admin_audit_log.dart';
 import 'models/fireside_application.dart';
@@ -20,6 +21,12 @@ import 'services/update_background_wakeup.dart';
 import 'services/update_registry.dart';
 import 'services/update_runtime.dart';
 import 'services/update_schedule.dart';
+
+/// Installed package metadata, shared and cached for this ProviderScope's life.
+/// This deliberately does not read the update registry or the source pubspec.
+final installedPackageInfoProvider = FutureProvider<PackageInfo>(
+  (ref) => PackageInfo.fromPlatform(),
+);
 
 final updateRuntimeConfigProvider = Provider<UpdateRuntimeConfig>(
   (ref) => const UpdateRuntimeConfig(),

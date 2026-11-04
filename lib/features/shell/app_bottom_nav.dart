@@ -63,6 +63,8 @@ class AppBottomNav extends StatelessWidget {
                 ),
                 customLabel: Text(
                   _tabs[i].$2,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                   style: TextStyle(
                     color: Colors.white,
                     fontSize: 10,
