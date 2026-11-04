@@ -5,6 +5,7 @@ on:
 
 permissions:
   contents: read
+  actions: read
 
 # Serialize with actual publication. Never cancel a running release or preflight.
 concurrency:

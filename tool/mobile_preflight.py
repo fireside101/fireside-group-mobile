@@ -150,29 +150,41 @@ def preflight(env):
     admit(env)
     # Actual GitHub metadata read, independent of the environment label. Approval
     # flags intentionally stay false; preflight does not grant publication consent.
-    release.verify_environment()
-    require(env.get('MOBILE_REGISTRY_CONTRACT') == release.PRIVATE_CONTRACT
-            and env.get('MOBILE_STORAGE_PROVIDER') == 'supabase-rest'
-            and env.get('MOBILE_SUPABASE_STORAGE_ENDPOINT') == ORIGIN + '/storage/v1'
-            and env.get('MOBILE_SUPABASE_STORAGE_BUCKET') == release.PRIVATE_BUCKET,
-            'private_configuration_held')
-    check_token(env.get('MOBILE_SUPABASE_STORAGE_TOKEN', ''))
-    storage = ProbeStorage(env['MOBILE_SUPABASE_STORAGE_ENDPOINT'], release.PRIVATE_BUCKET,
-                           env['MOBILE_SUPABASE_STORAGE_TOKEN'])
-    result = dict(status='verified', protected_environment=True,
-                  credential_metadata='scope_and_expiry_only_not_signature_proof',
-                  sql=probe_sql(env), health=probe_health(storage), storage=probe_storage(storage),
-                  employee_auth_pi_end_to_end='not_available', publication_enabled=False)
-    return result
+    stage = 'environment'
+    try:
+        release.verify_environment()
+        require(env.get('MOBILE_REGISTRY_CONTRACT') == release.PRIVATE_CONTRACT
+                and env.get('MOBILE_STORAGE_PROVIDER') == 'supabase-rest'
+                and env.get('MOBILE_SUPABASE_STORAGE_ENDPOINT') == ORIGIN + '/storage/v1'
+                and env.get('MOBILE_SUPABASE_STORAGE_BUCKET') == release.PRIVATE_BUCKET,
+                'private_configuration_held')
+        stage = 'token'
+        check_token(env.get('MOBILE_SUPABASE_STORAGE_TOKEN', ''))
+        storage = ProbeStorage(env['MOBILE_SUPABASE_STORAGE_ENDPOINT'], release.PRIVATE_BUCKET,
+                               env['MOBILE_SUPABASE_STORAGE_TOKEN'])
+        stage = 'sql'
+        sql = probe_sql(env)
+        stage = 'health'
+        health = probe_health(storage)
+        stage = 'storage'
+        storage_result = probe_storage(storage)
+    except Exception:
+        raise release.Held('preflight_' + stage + '_held') from None
+    return dict(status='verified', protected_environment=True,
+                credential_metadata='scope_and_expiry_only_not_signature_proof',
+                sql=sql, health=health, storage=storage_result,
+                employee_auth_pi_end_to_end='not_available', publication_enabled=False)
 
 
 def main():
     try:
         result = preflight(os.environ)
         code = 0
-    except Exception:
-        # Never reflect exception strings, bodies, DSNs, tokens, URLs or tracebacks.
-        result, code = dict(status='held', error='preflight_held',
+    except Exception as exc:
+        # Only fixed allowlisted stage labels; never arbitrary exception content.
+        allowed = {'preflight_' + s + '_held' for s in ('environment', 'token', 'sql', 'health', 'storage')}
+        error = str(exc) if isinstance(exc, release.Held) and str(exc) in allowed else 'preflight_held'
+        result, code = dict(status='held', error=error,
                             employee_auth_pi_end_to_end='not_available', publication_enabled=False), 1
     print(json.dumps(result, sort_keys=True, separators=(',', ':')))
     return code
