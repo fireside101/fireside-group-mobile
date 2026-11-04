@@ -1,0 +1,40 @@
+name: Mobile scoped production preflight
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Serialize with actual publication. Never cancel a running release or preflight.
+concurrency:
+  group: flutter-main-release
+  cancel-in-progress: false
+
+jobs:
+  preflight:
+    if: github.repository == 'fireside101/fireside-group-mobile' && github.actor == 'josephndex' && github.triggering_actor == 'josephndex' && github.ref == 'refs/heads/main' && github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: mobile-release
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install -r tool/requirements-release.txt
+      - name: Isolated dedicated preflight tests (no protected credentials)
+        run: python -m unittest discover -s tool/tests -p test_mobile_preflight.py -v
+      - name: Prove actual scoped credentials without publication or SQL writes
+        env:
+          GH_TOKEN: ${{ github.token }}
+          MOBILE_REGISTRY_CONTRACT: ${{ vars.MOBILE_REGISTRY_CONTRACT }}
+          MOBILE_REGISTRY_CA_PEM: ${{ vars.MOBILE_REGISTRY_CA_PEM }}
+          MOBILE_REGISTRY_DSN: ${{ secrets.MOBILE_REGISTRY_DSN }}
+          MOBILE_STORAGE_PROVIDER: ${{ vars.MOBILE_STORAGE_PROVIDER }}
+          MOBILE_SUPABASE_STORAGE_ENDPOINT: ${{ vars.MOBILE_SUPABASE_STORAGE_ENDPOINT }}
+          MOBILE_SUPABASE_STORAGE_BUCKET: ${{ vars.MOBILE_SUPABASE_STORAGE_BUCKET }}
+          MOBILE_SUPABASE_STORAGE_TOKEN: ${{ secrets.MOBILE_SUPABASE_STORAGE_TOKEN }}
+        run: python tool/mobile_preflight.py
