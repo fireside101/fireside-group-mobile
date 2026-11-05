@@ -5,6 +5,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../core/mobile_targets.dart';
 import 'secure_update_auth.dart';
+import 'onboarding_errors.dart';
 
 class OnboardingException implements Exception {
   const OnboardingException(
@@ -75,23 +76,25 @@ class AuthService {
           }
           bytes.addAll(chunk);
         }
-        Map<String, dynamic> data;
+        Map<String, dynamic> data = {};
         try {
           data = jsonDecode(utf8.decode(bytes)) as Map<String, dynamic>;
         } catch (_) {
-          throw const OnboardingException(
-            'Account service unavailable. Please try again.',
-          );
+          if (response.statusCode == 200) {
+            throw const OnboardingException(
+              'Account service unavailable. Please try again.',
+            );
+          }
+          // Preserve status/Retry-After even for an upstream HTML error body.
         }
         if (response.statusCode != 200) {
           throw OnboardingException(
-            data['error'] is String
-                ? data['error'] as String
-                : 'Account service unavailable. Please try again.',
+            onboardingErrorMessage(response.statusCode, data),
             statusCode: response.statusCode,
-            retryAfterSeconds: response.statusCode == 429
-                ? int.tryParse(response.headers['retry-after'] ?? '') ?? 900
-                : null,
+            retryAfterSeconds: onboardingRetryAfter(
+              response.statusCode,
+              response.headers['retry-after'],
+            ),
           );
         }
         return data;
@@ -99,9 +102,7 @@ class AuthService {
     } on OnboardingException {
       rethrow;
     } catch (_) {
-      throw const OnboardingException(
-        'Account service unavailable. Please try again.',
-      );
+      throw const OnboardingException(onboardingNetworkError);
     }
   }
 
@@ -170,12 +171,16 @@ class AuthService {
     required String password,
     required String confirmPassword,
   }) async {
-    if (password.length < 8 ||
-        password.length > 1024 ||
-        password != confirmPassword) {
-      throw const OnboardingException(
-        'Use 8–1024 characters and matching passwords.',
+    if (password.length < 8 || password.length > 1024) {
+      throw OnboardingException(onboardingErrorMessages['PASSWORD_LENGTH']!);
+    }
+    if (confirmPassword.isEmpty) {
+      throw OnboardingException(
+        onboardingErrorMessages['CONFIRM_PASSWORD_REQUIRED']!,
       );
+    }
+    if (password != confirmPassword) {
+      throw OnboardingException(onboardingErrorMessages['PASSWORD_MISMATCH']!);
     }
     final data = await _post('register', {
       'email': email.trim(),

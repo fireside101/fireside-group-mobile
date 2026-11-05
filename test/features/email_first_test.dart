@@ -175,6 +175,10 @@ void main() {
       retryAfterSeconds: 900,
     );
     await discover(tester);
+    expect(
+      find.text('Too many attempts. Try again in 900 seconds.'),
+      findsOneWidget,
+    );
     await tester.ensureVisible(find.text('Continue'));
     await tester.tap(find.text('Continue'));
     await tester.pumpAndSettle();

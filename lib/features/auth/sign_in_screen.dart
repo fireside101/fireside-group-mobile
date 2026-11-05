@@ -100,7 +100,8 @@ class _SignInScreenState extends ConsumerState<SignInScreen> {
             _retryAt = DateTime.now().add(
               Duration(seconds: error.retryAfterSeconds!.clamp(1, 86400)),
             );
-            _message = '${error.message} Please wait before trying again.';
+            final seconds = error.retryAfterSeconds!.clamp(1, 86400);
+            _message = '${error.message} Try again in $seconds seconds.';
           }
           if (error.statusCode == 409 || error.statusCode == 503) {
             // A race/uncertain creation must be rediscovered, never replayed,

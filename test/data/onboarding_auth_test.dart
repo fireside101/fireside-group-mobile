@@ -147,11 +147,17 @@ void main() {
         throwsA(
           isA<OnboardingException>()
               .having((e) => e.statusCode, 'status', status)
-              .having((e) => e.message, 'message', message)
+              .having(
+                (e) => e.message,
+                'message',
+                status == 429
+                    ? 'Too many attempts. Please wait before trying again.'
+                    : message,
+              )
               .having(
                 (e) => e.retryAfterSeconds,
                 'retry',
-                status == 429 ? 900 : null,
+                status == 429 || status == 503 ? 900 : null,
               ),
         ),
       );

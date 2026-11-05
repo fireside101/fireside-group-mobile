@@ -1,0 +1,74 @@
+{
+  "INVALID_EMAIL": {
+    "status": 400,
+    "error": "Enter a valid email address."
+  },
+  "PASSWORD_REQUIRED": {
+    "status": 400,
+    "error": "Enter your password."
+  },
+  "PASSWORD_LENGTH": {
+    "status": 400,
+    "error": "Use a password of 8–1024 characters."
+  },
+  "CONFIRM_PASSWORD_REQUIRED": {
+    "status": 400,
+    "error": "Confirm your password."
+  },
+  "PASSWORD_MISMATCH": {
+    "status": 400,
+    "error": "Passwords do not match. Re-enter your confirmation."
+  },
+  "INVALID_CREDENTIALS": {
+    "status": 401,
+    "error": "Incorrect email or password. Please try again."
+  },
+  "ACCOUNT_UNVERIFIED": {
+    "status": 401,
+    "error": "This existing account is not ready for sign-in. Contact HR or the Business Intelligence and Digital Engineering team for assistance."
+  },
+  "PI_INELIGIBLE": {
+    "status": 403,
+    "error": "Your email is not in PI. Kindly contact HR or the Business Intelligence and Digital Engineering team for assistance."
+  },
+  "ACCOUNT_EXISTS": {
+    "status": 409,
+    "error": "This account already exists. Sign in with your existing password or contact support for recovery."
+  },
+  "RATE_LIMITED": {
+    "status": 429,
+    "error": "Too many attempts. Please wait before trying again."
+  },
+  "SERVICE_BUSY": {
+    "status": 503,
+    "error": "Account service is busy. Please try again shortly."
+  },
+  "SERVICE_UNAVAILABLE": {
+    "status": 503,
+    "error": "Account service is unavailable. Please try again later."
+  },
+  "ORIGIN_NOT_ALLOWED": {
+    "status": 403,
+    "error": "Request origin is not allowed."
+  },
+  "JSON_REQUIRED": {
+    "status": 415,
+    "error": "Send a JSON request."
+  },
+  "INVALID_REQUEST": {
+    "status": 400,
+    "error": "Invalid request."
+  },
+  "REQUEST_TOO_LARGE": {
+    "status": 413,
+    "error": "Request is too large."
+  },
+  "SETUP_RETIRED": {
+    "status": 410,
+    "error": "This setup link is retired. Return to email-first sign in or contact support."
+  },
+  "NOT_FOUND": {
+    "status": 404,
+    "error": "Not found."
+  }
+}
