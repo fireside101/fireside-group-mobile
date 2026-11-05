@@ -8,71 +8,68 @@ class AuthController extends StateNotifier<AsyncValue<AuthSession?>> {
   AuthController(this._service) : super(const AsyncValue.loading()) {
     _restore();
   }
-
   final AuthService _service;
-
+  int _operation = 0;
   bool get isAuthenticated =>
       state.hasValue && state.value != null && !state.isLoading;
-
+  bool _current(int operation) => mounted && operation == _operation;
   Future<void> refresh() => _restore();
-
   Future<void> _restore() async {
+    final operation = ++_operation;
     try {
       final session = await _service.restoreSession();
-      state = AsyncValue.data(session);
+      if (_current(operation)) state = AsyncValue.data(session);
     } catch (_) {
-      // A stale or corrupt session must not prevent the login screen from
-      // rendering. Treat it as signed out and let the user authenticate again.
-      state = const AsyncValue.data(null);
+      if (_current(operation)) state = const AsyncValue.data(null);
     }
   }
 
   Future<bool> signIn(String email, String password) async {
+    final operation = ++_operation;
     state = const AsyncValue.loading();
     try {
       final session = await _service.signIn(email: email, password: password);
-      if (session != null) {
-        state = AsyncValue.data(session);
-        return true;
-      }
-      state = const AsyncValue.data(null);
-      return false;
+      if (!_current(operation)) return false;
+      state = AsyncValue.data(session);
+      return session != null;
     } catch (error, stack) {
-      // Keep routing in the signed-out state. The screen owns the
-      // user-facing error and catches the exception at the button boundary.
-      state = const AsyncValue.data(null);
+      if (_current(operation)) state = const AsyncValue.data(null);
       Error.throwWithStackTrace(error, stack);
     }
   }
 
-  Future<bool> register(String email, String password) async {
+  Future<bool> register(
+    String email,
+    String password,
+    String confirmPassword,
+  ) async {
+    final operation = ++_operation;
     state = const AsyncValue.loading();
     try {
-      final session = await _service.register(email: email, password: password);
-      state = AsyncValue.data(session);
-      return session != null;
+      await _service.register(
+        email: email,
+        password: password,
+        confirmPassword: confirmPassword,
+      );
+      if (_current(operation)) state = const AsyncValue.data(null);
+      return false; // Registration never signs in.
     } catch (error, stack) {
-      state = const AsyncValue.data(null);
+      if (_current(operation)) state = const AsyncValue.data(null);
       Error.throwWithStackTrace(error, stack);
     }
   }
 
   Future<bool> sendPasswordReset(String email) async {
-    try {
-      await _service.sendPasswordReset(email);
-      return true;
-    } catch (error, stack) {
-      // Reset-email failures are displayed by the login screen and should not
-      // replace the current auth state or trigger a router redirect.
-      Error.throwWithStackTrace(error, stack);
-    }
+    await _service.sendPasswordReset(email);
+    return true;
   }
 
   Future<void> signOut() async {
+    final operation = ++_operation;
     try {
       await _service.signOut();
     } finally {
-      state = const AsyncValue.data(null);
+      if (_current(operation)) state = const AsyncValue.data(null);
     }
   }
 }

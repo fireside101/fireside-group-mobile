@@ -1,5 +1,8 @@
 # Durable project memory
 
+- Email-first onboarding owner admission is now unblocked after deployed guard v2/readback; owner explicitly approved the normal latest APK defect-fix release. See `mobile-email-first-candidate.md`. Classification stays server-owned: amanik discovery returns register; existing Joseph returns login. Never delete/create/reset production accounts for QA or infer first activation from tests/publication. Preserve IDs/roles/data and original signer/package.
+- Portal-issued token pairs must be enrolled through the existing secure coordinator before SDK setSession: exchange refresh with no redirects, check email and guard commit against the epoch captured before portal login. Controller operation stamps prevent stale restore/login results from overwriting logout/newer accounts. Do not add plaintext storage, client PI access or generic signup/reset fallback.
+
 - Fireside changes begin with the BI repository's START-HERE; application implementation/evidence stays here. Local implementation approval does not authorize production grants, release pushes, cloud mutation, replacement signing keys or managed installs.
 - See `security-release-correctness.md` for the latest local security/release gate; it supersedes historical manual-only/public-GitHub-first and missing-Flutter statements in `modernization-implementation.md`.
 - Legacy clients discover GitHub latest. Stage assets as draft/latest=false and expose only after real signature/package/version verification, immutable-storage byte readback and registry receipt/current-pointer checks. An interrupted final visibility call is uncertain, not guaranteed invisible; retry exact signed bytes. Do not rebuild over an existing reservation/release.

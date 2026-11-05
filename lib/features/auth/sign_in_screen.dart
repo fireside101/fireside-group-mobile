@@ -1,41 +1,130 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../core/theme/app_colors.dart';
-import '../../core/theme/app_typography.dart';
+import '../../data/services/auth_service.dart';
 import '../shell/app_header.dart';
 import 'auth_controller.dart';
 
-/// Supabase email/password sign-in matching the web portal's login card.
+/// PI eligibility is decided exclusively by the portal. No native PI queries,
+/// generic signup, confirmation mail, OTP or automatic password reset.
 class SignInScreen extends ConsumerStatefulWidget {
   const SignInScreen({super.key});
-
   @override
   ConsumerState<SignInScreen> createState() => _SignInScreenState();
 }
 
 class _SignInScreenState extends ConsumerState<SignInScreen> {
   final _formKey = GlobalKey<FormState>();
-  final _emailController = TextEditingController();
-  final _passwordController = TextEditingController();
+  final _email = TextEditingController();
+  final _password = TextEditingController();
+  final _confirm = TextEditingController();
+  String? _next;
   String? _message;
-  bool _messageIsError = true;
+  bool _busy = false;
+  bool _error = true;
+  DateTime? _retryAt;
+  bool get _register => _next == 'register';
 
   @override
   void dispose() {
-    _emailController.dispose();
-    _passwordController.dispose();
+    _email.dispose();
+    _password.dispose();
+    _confirm.dispose();
     super.dispose();
+  }
+
+  void _changeEmail() {
+    if (_busy) return;
+    setState(() {
+      _next = null;
+      _message = null;
+      _password.clear();
+      _confirm.clear();
+    });
+  }
+
+  Future<void> _submit() async {
+    if (_busy || !_formKey.currentState!.validate()) return;
+    final retryAt = _retryAt;
+    if (retryAt != null && DateTime.now().isBefore(retryAt)) {
+      setState(() {
+        _message = 'Too many attempts. Please wait before trying again.';
+        _error = true;
+      });
+      return;
+    }
+    FocusManager.instance.primaryFocus?.unfocus();
+    setState(() {
+      _busy = true;
+      _message = null;
+      _error = true;
+    });
+    try {
+      if (_next == null) {
+        final next = await ref.read(authServiceProvider).discover(_email.text);
+        if (!mounted) return;
+        setState(() => _next = next);
+      } else if (_register) {
+        await ref
+            .read(authControllerProvider.notifier)
+            .register(_email.text, _password.text, _confirm.text);
+        if (!mounted) return;
+        setState(() {
+          _next = 'login';
+          _password.clear();
+          _confirm.clear();
+          _message = 'Account created. Sign in with your new password.';
+          _error = false;
+        });
+      } else {
+        final success = await ref
+            .read(authControllerProvider.notifier)
+            .signIn(_email.text, _password.text);
+        if (!mounted) return;
+        if (success) {
+          context.go('/');
+          return;
+        }
+        setState(() => _message = 'Sign-in failed. Please try again.');
+      }
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _message = error is OnboardingException
+            ? error.message
+            : 'Sign-in unavailable. Please try again.';
+        if (error is OnboardingException) {
+          if (error.retryAfterSeconds != null) {
+            _retryAt = DateTime.now().add(
+              Duration(seconds: error.retryAfterSeconds!.clamp(1, 86400)),
+            );
+            _message = '${error.message} Please wait before trying again.';
+          }
+          if (error.statusCode == 409 || error.statusCode == 503) {
+            // A race/uncertain creation must be rediscovered, never replayed,
+            // overwritten, reset or treated as an authenticated success.
+            _next = null;
+            _password.clear();
+            _confirm.clear();
+          }
+          if (error.statusCode == 403) {
+            _next = null;
+            _password.clear();
+            _confirm.clear();
+          }
+        }
+      });
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     final colors = context.appColors;
-    final auth = ref.watch(authControllerProvider);
-    final busy = auth.isLoading;
-
+    final busy = _busy || ref.watch(authControllerProvider).isLoading;
     return Scaffold(
       backgroundColor: colors.ivory,
       body: Column(
@@ -46,250 +135,149 @@ class _SignInScreenState extends ConsumerState<SignInScreen> {
               child: SingleChildScrollView(
                 padding: const EdgeInsets.symmetric(
                   horizontal: 18,
-                  vertical: 56,
+                  vertical: 40,
                 ),
                 child: ConstrainedBox(
                   constraints: const BoxConstraints(maxWidth: 420),
-                  child: _LoginCard(
-                    formKey: _formKey,
-                    emailController: _emailController,
-                    passwordController: _passwordController,
-                    busy: busy,
-                    message: _message,
-                    messageIsError: _messageIsError,
-                    onSubmit: _submit,
-                    onRegister: _register,
-                    onResetPassword: _resetPassword,
+                  child: Container(
+                    padding: const EdgeInsets.all(28),
+                    decoration: BoxDecoration(
+                      color: colors.surface,
+                      borderRadius: BorderRadius.circular(18),
+                      border: Border.all(color: colors.border),
+                    ),
+                    child: Form(
+                      key: _formKey,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          Text(
+                            'FIRESIDE GROUP ACCOUNT',
+                            style: Theme.of(context).textTheme.labelSmall
+                                ?.copyWith(color: colors.textAccent),
+                          ),
+                          const SizedBox(height: 12),
+                          Text(
+                            _register
+                                ? 'Set your password'
+                                : 'Sign in to launch applications',
+                            style: Theme.of(context).textTheme.headlineMedium,
+                          ),
+                          const SizedBox(height: 12),
+                          Text(
+                            _next == null
+                                ? 'Enter your work email to continue.'
+                                : _register
+                                ? 'Create a password for your eligible PI email.'
+                                : 'Enter your existing Group password.',
+                          ),
+                          if (_message != null) ...[
+                            const SizedBox(height: 16),
+                            Text(
+                              _message!,
+                              style: TextStyle(
+                                color: _error
+                                    ? colors.statusBad
+                                    : colors.statusGreen,
+                              ),
+                            ),
+                          ],
+                          const SizedBox(height: 20),
+                          TextFormField(
+                            controller: _email,
+                            enabled: !busy,
+                            readOnly: _next != null,
+                            keyboardType: TextInputType.emailAddress,
+                            autofillHints: const [
+                              AutofillHints.username,
+                              AutofillHints.email,
+                            ],
+                            decoration: const InputDecoration(
+                              labelText: 'Email',
+                            ),
+                            validator: (value) =>
+                                value == null || !value.trim().contains('@')
+                                ? 'Enter a valid email.'
+                                : null,
+                            onFieldSubmitted: (_) {
+                              if (_next == null) _submit();
+                            },
+                          ),
+                          if (_next != null) ...[
+                            TextButton(
+                              onPressed: busy ? null : _changeEmail,
+                              child: const Text('Change email'),
+                            ),
+                            const SizedBox(height: 8),
+                            TextFormField(
+                              controller: _password,
+                              enabled: !busy,
+                              obscureText: true,
+                              autofillHints: [
+                                _register
+                                    ? AutofillHints.newPassword
+                                    : AutofillHints.password,
+                              ],
+                              decoration: InputDecoration(
+                                labelText: _register
+                                    ? 'New password'
+                                    : 'Password',
+                              ),
+                              validator: (value) {
+                                if (value == null || value.isEmpty) {
+                                  return 'Enter your password.';
+                                }
+                                if (_register &&
+                                    (value.length < 8 || value.length > 1024)) {
+                                  return 'Use 8–1024 characters.';
+                                }
+                                return null;
+                              },
+                              onFieldSubmitted: (_) {
+                                if (!_register) _submit();
+                              },
+                            ),
+                            if (_register) ...[
+                              const SizedBox(height: 15),
+                              TextFormField(
+                                controller: _confirm,
+                                enabled: !busy,
+                                obscureText: true,
+                                autofillHints: const [
+                                  AutofillHints.newPassword,
+                                ],
+                                decoration: const InputDecoration(
+                                  labelText: 'Confirm password',
+                                ),
+                                validator: (value) => value != _password.text
+                                    ? 'Passwords do not match.'
+                                    : null,
+                                onFieldSubmitted: (_) => _submit(),
+                              ),
+                            ],
+                          ],
+                          const SizedBox(height: 22),
+                          FilledButton(
+                            onPressed: busy ? null : _submit,
+                            child: Text(
+                              busy
+                                  ? 'Please wait…'
+                                  : _next == null
+                                  ? 'Continue'
+                                  : _register
+                                  ? 'Create account'
+                                  : 'Sign In',
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
                   ),
                 ),
               ),
             ),
           ),
         ],
-      ),
-    );
-  }
-
-  Future<void> _submit() async {
-    if (!_formKey.currentState!.validate()) return;
-    FocusManager.instance.primaryFocus?.unfocus();
-    setState(() => _message = null);
-
-    bool success;
-    Object? error;
-    try {
-      success = await ref
-          .read(authControllerProvider.notifier)
-          .signIn(_emailController.text, _passwordController.text);
-    } catch (caught) {
-      success = false;
-      error = caught;
-    }
-    if (!mounted) return;
-    if (success) {
-      context.go('/');
-      return;
-    }
-
-    setState(() {
-      _message = _friendlyError(error);
-      _messageIsError = true;
-    });
-  }
-
-  Future<void> _resetPassword() async {
-    if (!mounted) return;
-    context.push('/reset-password');
-  }
-
-  Future<void> _register() async {
-    if (!mounted) return;
-    context.push('/register');
-  }
-
-  String _friendlyError(Object? error) {
-    if (error is StateError) return error.message;
-    if (error is AuthException) {
-      final message = error.message.toLowerCase();
-      if (message.contains('invalid login credentials')) {
-        return 'Email or password is incorrect.';
-      }
-      if (message.contains('already registered') ||
-          message.contains('already been registered')) {
-        return 'That email is already registered. Try signing in or resetting the password.';
-      }
-      if (message.contains('email not confirmed')) {
-        return 'Confirm your email address before signing in.';
-      }
-      return error.message;
-    }
-    final text = error?.toString() ?? '';
-    if (text.contains('Invalid login credentials')) {
-      return 'Email or password is incorrect.';
-    }
-    return text.isEmpty ? 'Sign-in failed. Please try again.' : text;
-  }
-}
-
-class _LoginCard extends StatelessWidget {
-  const _LoginCard({
-    required this.formKey,
-    required this.emailController,
-    required this.passwordController,
-    required this.busy,
-    required this.onSubmit,
-    required this.onRegister,
-    required this.onResetPassword,
-    this.message,
-    required this.messageIsError,
-  });
-
-  final GlobalKey<FormState> formKey;
-  final TextEditingController emailController;
-  final TextEditingController passwordController;
-  final bool busy;
-  final String? message;
-  final bool messageIsError;
-  final VoidCallback onSubmit;
-  final VoidCallback onRegister;
-  final VoidCallback onResetPassword;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.appColors;
-    return Container(
-      padding: const EdgeInsets.all(28),
-      decoration: BoxDecoration(
-        color: colors.surface,
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: colors.border),
-        boxShadow: [
-          BoxShadow(
-            color: colors.charcoal.withValues(alpha: 0.1),
-            blurRadius: 48,
-            offset: const Offset(0, 18),
-          ),
-        ],
-      ),
-      child: Form(
-        key: formKey,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'FIRESIDE GROUP ACCOUNT',
-              style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                color: colors.textAccent,
-                fontWeight: FontWeight.w800,
-                letterSpacing: 1.4,
-              ),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'Sign in to launch applications',
-              style: AppTypography.displayMedium().copyWith(
-                color: colors.charcoal,
-                fontSize: 30,
-                height: 1.1,
-              ),
-            ),
-            const SizedBox(height: 10),
-            Text(
-              'Use your Fireside Group credentials. Unauthenticated apps launch only after signing in.',
-              style: Theme.of(context).textTheme.bodyMedium
-                  ?.copyWith(color: colors.muted, height: 1.45),
-            ),
-            if (message != null) ...[
-              const SizedBox(height: 18),
-              _MessageBanner(text: message!, isError: messageIsError),
-            ],
-            const SizedBox(height: 20),
-            TextFormField(
-              controller: emailController,
-              enabled: !busy,
-              keyboardType: TextInputType.emailAddress,
-              textInputAction: TextInputAction.next,
-              autofillHints: const [
-                AutofillHints.username,
-                AutofillHints.email,
-              ],
-              decoration: const InputDecoration(labelText: 'Email'),
-              validator: (value) {
-                if (value == null || value.trim().isEmpty) {
-                  return 'Enter your email.';
-                }
-                if (!value.contains('@')) return 'Enter a valid email.';
-                return null;
-              },
-            ),
-            const SizedBox(height: 15),
-            TextFormField(
-              controller: passwordController,
-              enabled: !busy,
-              obscureText: true,
-              textInputAction: TextInputAction.done,
-              autofillHints: const [AutofillHints.password],
-              onFieldSubmitted: (_) => onSubmit(),
-              decoration: const InputDecoration(labelText: 'Password'),
-              validator: (value) => value == null || value.isEmpty
-                  ? 'Enter your password.'
-                  : null,
-            ),
-            const SizedBox(height: 6),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                TextButton(
-                  onPressed: busy ? null : onRegister,
-                  child: const Text('Register'),
-                ),
-                const SizedBox(width: 8),
-                TextButton(
-                  onPressed: busy ? null : onResetPassword,
-                  child: const Text('Reset password'),
-                ),
-              ],
-            ),
-            const SizedBox(height: 4),
-            SizedBox(
-              width: double.infinity,
-              child: FilledButton(
-                onPressed: busy ? null : onSubmit,
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 5),
-                  child: Text(busy ? 'Signing in…' : 'Sign In'),
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _MessageBanner extends StatelessWidget {
-  const _MessageBanner({required this.text, required this.isError});
-
-  final String text;
-  final bool isError;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.appColors;
-    final color = isError ? colors.statusBad : colors.statusGreen;
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 11),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.08),
-        border: Border.all(color: color.withValues(alpha: 0.35)),
-        borderRadius: BorderRadius.circular(10),
-      ),
-      child: Text(
-        text,
-        style: Theme.of(context).textTheme.bodySmall
-            ?.copyWith(color: color, height: 1.35),
       ),
     );
   }

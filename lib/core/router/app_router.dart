@@ -36,11 +36,7 @@ final routerProvider = Provider<GoRouter>((ref) {
         path: '/sign-in',
         builder: (context, state) => const SignInScreen(),
       ),
-      GoRoute(
-        path: '/register',
-        builder: (context, state) =>
-            const AccountSetupScreen(mode: AccountSetupMode.register),
-      ),
+      GoRoute(path: '/register', redirect: (context, state) => '/sign-in'),
       GoRoute(
         path: '/reset-password',
         builder: (context, state) =>

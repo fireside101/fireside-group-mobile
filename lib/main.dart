@@ -6,10 +6,13 @@ import 'package:http/http.dart' as http;
 
 import 'app.dart';
 import 'data/services/secure_update_auth.dart';
+import 'data/services/auth_service.dart';
+import 'features/auth/auth_controller.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
+  SecureSessionVault? authVault;
   const supabaseUrl = String.fromEnvironment('SUPABASE_URL');
   const supabaseAnonKey = String.fromEnvironment('SUPABASE_ANON_KEY');
   if (supabaseUrl.isNotEmpty && supabaseAnonKey.isNotEmpty) {
@@ -49,6 +52,7 @@ Future<void> main() async {
               : SecurePkceStorage(vault.secrets),
         ),
       );
+      authVault = vault;
     } catch (_) {
       // Keep the app renderable when Auth cannot initialize. The login screen
       // will show a recoverable configuration error instead of a blank app.
@@ -56,5 +60,12 @@ Future<void> main() async {
     }
   }
 
-  runApp(const ProviderScope(child: FiresideGroupApp()));
+  runApp(
+    ProviderScope(
+      overrides: [
+        authServiceProvider.overrideWithValue(AuthService(vault: authVault)),
+      ],
+      child: const FiresideGroupApp(),
+    ),
+  );
 }

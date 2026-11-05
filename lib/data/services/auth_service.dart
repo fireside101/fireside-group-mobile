@@ -1,4 +1,23 @@
+import 'dart:convert';
+
+import 'package:http/http.dart' as http;
 import 'package:supabase_flutter/supabase_flutter.dart';
+
+import '../../core/mobile_targets.dart';
+import 'secure_update_auth.dart';
+
+class OnboardingException implements Exception {
+  const OnboardingException(
+    this.message, {
+    this.statusCode,
+    this.retryAfterSeconds,
+  });
+  final String message;
+  final int? statusCode;
+  final int? retryAfterSeconds;
+  @override
+  String toString() => message;
+}
 
 /// In-memory representation of the signed-in Workspace user.
 class AuthSession {
@@ -23,39 +42,157 @@ class AuthSession {
 
 /// Supabase-backed authentication for the mobile portal.
 class AuthService {
-  AuthService({SupabaseClient? client}) : _client = client ?? _tryClient();
+  AuthService({SupabaseClient? client, http.Client? transport, this._vault})
+    : _client = client ?? _tryClient(),
+      _transport = transport ?? http.Client();
 
   final SupabaseClient? _client;
+  final http.Client _transport;
+  final SecureSessionVault? _vault;
+  int _generation = 0;
 
   bool get isConfigured => _client != null;
+
+  Future<Map<String, dynamic>> _post(
+    String action,
+    Map<String, String> body,
+  ) async {
+    try {
+      final origin = MobileTargets.fromEnvironment().portalOrigin;
+      final request =
+          http.Request('POST', Uri.parse('$origin/api/auth/onboarding/$action'))
+            ..followRedirects = false
+            ..headers['Content-Type'] = 'application/json'
+            ..body = jsonEncode(body);
+      return await (() async {
+        final response = await _transport.send(request);
+        final bytes = <int>[];
+        await for (final chunk in response.stream) {
+          if (bytes.length + chunk.length > 65536) {
+            throw const OnboardingException(
+              'Account service unavailable. Please try again.',
+            );
+          }
+          bytes.addAll(chunk);
+        }
+        Map<String, dynamic> data;
+        try {
+          data = jsonDecode(utf8.decode(bytes)) as Map<String, dynamic>;
+        } catch (_) {
+          throw const OnboardingException(
+            'Account service unavailable. Please try again.',
+          );
+        }
+        if (response.statusCode != 200) {
+          throw OnboardingException(
+            data['error'] is String
+                ? data['error'] as String
+                : 'Account service unavailable. Please try again.',
+            statusCode: response.statusCode,
+            retryAfterSeconds: response.statusCode == 429
+                ? int.tryParse(response.headers['retry-after'] ?? '') ?? 900
+                : null,
+          );
+        }
+        return data;
+      })().timeout(const Duration(seconds: 30));
+    } on OnboardingException {
+      rethrow;
+    } catch (_) {
+      throw const OnboardingException(
+        'Account service unavailable. Please try again.',
+      );
+    }
+  }
+
+  Future<String> discover(String email) async {
+    final data = await _post('discover', {'email': email.trim()});
+    final next = data['next'];
+    if (next != 'login' && next != 'register') {
+      throw const OnboardingException(
+        'Account service unavailable. Please try again.',
+      );
+    }
+    return next as String;
+  }
 
   Future<AuthSession?> signIn({
     required String email,
     required String password,
   }) async {
     final client = _requireClient();
-    final response = await client.auth.signInWithPassword(
-      email: email.trim(),
-      password: password,
+    final generation = ++_generation;
+    final vault = _vault;
+    final epoch = await vault?.currentEpoch();
+    final data = await _post('login', {
+      'email': email.trim(),
+      'password': password,
+    });
+    if (generation != _generation) {
+      throw StateError('Authentication operation superseded.');
+    }
+    final tokens = data['session'];
+    if (tokens is! Map ||
+        tokens['access_token'] is! String ||
+        tokens['refresh_token'] is! String ||
+        (tokens['access_token'] as String).isEmpty ||
+        (tokens['refresh_token'] as String).isEmpty) {
+      throw const OnboardingException(
+        'Account service unavailable. Please try again.',
+      );
+    }
+    // The coordinator must enroll the external login before SDK setSession:
+    // its refresh interceptor deliberately refuses un-enrolled credentials.
+    if (vault != null) {
+      await vault.acceptPortalLogin(
+        _transport,
+        Uri.parse(Uri.parse(client.rest.url).origin),
+        client.auth.headers['apikey']!,
+        tokens['refresh_token'] as String,
+        email.trim(),
+        expectedEpoch: epoch,
+      );
+    }
+    if (generation != _generation) {
+      throw StateError('Authentication operation superseded.');
+    }
+    final response = await client.auth.setSession(
+      tokens['refresh_token'] as String,
     );
+    if (generation != _generation) {
+      throw StateError('Authentication operation superseded.');
+    }
     return _sessionFromUser(response.user);
   }
 
   Future<AuthSession?> register({
     required String email,
     required String password,
+    required String confirmPassword,
   }) async {
-    final client = _requireClient();
-    final response = await client.auth.signUp(
-      email: email.trim(),
-      password: password,
-    );
-    // Supabase can create the user without creating a session when email
-    // confirmation is enabled. Keep the user on the login screen in that case.
-    return response.session == null ? null : _sessionFromUser(response.user);
+    if (password.length < 8 ||
+        password.length > 1024 ||
+        password != confirmPassword) {
+      throw const OnboardingException(
+        'Use 8–1024 characters and matching passwords.',
+      );
+    }
+    final data = await _post('register', {
+      'email': email.trim(),
+      'password': password,
+      'confirmPassword': confirmPassword,
+    });
+    if (data['next'] != 'login' || data.containsKey('session')) {
+      throw const OnboardingException(
+        'Account service unavailable. Return to email and try again.',
+      );
+    }
+    return null; // Registration never establishes a session or invokes signup/reset.
   }
 
   Future<void> signOut() async {
+    ++_generation;
+    await _vault?.removePersistedSession();
     await _requireClient().auth.signOut();
   }
 

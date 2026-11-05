@@ -143,6 +143,44 @@ class SecureSessionVault extends LocalStorage {
     _epoch = epoch;
   });
 
+  /// Exchange the portal-issued refresh token without exposing it to SDK
+  /// persistence. Preserve the original epoch across both network hops.
+  Future<void> acceptPortalLogin(
+    http.Client transport,
+    Uri origin,
+    String anonKey,
+    String refreshToken,
+    String email, {
+    String? expectedEpoch,
+  }) async {
+    if (await currentEpoch() != expectedEpoch) {
+      throw StateError('Authentication operation superseded.');
+    }
+    final request =
+        http.Request(
+            'POST',
+            origin.resolve('/auth/v1/token?grant_type=refresh_token'),
+          )
+          ..followRedirects = false
+          ..headers.addAll({
+            'apikey': anonKey,
+            'Content-Type': 'application/json',
+          })
+          ..body = jsonEncode({'refresh_token': refreshToken});
+    final response = await _send(transport, request);
+    if (response.statusCode != 200) {
+      throw StateError('Authentication refresh unavailable.');
+    }
+    final session = _decodeObject(response.body);
+    final user = session['user'];
+    if (user is! Map ||
+        user['email'] is! String ||
+        (user['email'] as String).toLowerCase() != email.toLowerCase()) {
+      throw StateError('Authentication identity changed.');
+    }
+    await acceptLogin(session, expectedEpoch: expectedEpoch, guarded: true);
+  }
+
   @override
   Future<void> initialize() async {}
   @override
