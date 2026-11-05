@@ -104,6 +104,69 @@ void main() {
     );
     expect(calls, 0);
   });
+  for (final replacement in [false, true]) {
+    test(
+      'background callback rejects ${replacement ? "account replacement" : "revoked refresh"} without a reminder',
+      () async {
+        final secrets = MemorySecrets();
+        final vault = SecureSessionVault(secrets: secrets, gate: MemoryGate());
+        await vault.acceptLogin(session('old', user: 'actor-a'));
+        var reminders = 0;
+        final paths = <String>[];
+        final deps = BackgroundUpdateDependencies(
+          config: config,
+          vault: vault,
+          client: MockClient((request) async {
+            paths.add(request.url.path);
+            if (replacement) {
+              // Refresh is serialized by the Auth gate; replace during the
+              // subsequent eligibility request, outside that refresh lock.
+              if (request.url.path == '/auth/v1/token') {
+                return http.Response(
+                  jsonEncode({
+                    ...session('fresh', user: 'actor-a'),
+                    'expires_at': 9999999999,
+                  }),
+                  200,
+                );
+              }
+              await vault.acceptLogin({
+                ...session('new', user: 'actor-b'),
+                'expires_at': 9999999999,
+              });
+              return http.Response('{"release":null}', 200);
+            }
+            return http.Response('{"error":"synthetic-revocation"}', 401);
+          }),
+          schedule: UpdateSchedule(
+            store: MemoryScheduleStore()..value = {'due': 0, 'failures': 0},
+          ),
+          writeReminder: (_) async {
+            reminders++;
+          },
+        );
+        expect(
+          await executeUpdateWakeupTask(
+            updateWakeupTask,
+            null,
+            dependencies: deps,
+          ),
+          isFalse,
+        );
+        expect(reminders, 0);
+        if (replacement) {
+          expect(paths, ['/auth/v1/token', '/functions/v1/mobile-update']);
+          expect(
+            jsonDecode((await vault.accessToken())!)['user']['id'],
+            'actor-b',
+          );
+        } else {
+          expect(paths, ['/auth/v1/token']);
+          expect(await vault.accessToken(), isNull);
+        }
+      },
+    );
+  }
   test(
     'logout during real callback private request prevents pending reminder',
     () async {

@@ -1,0 +1,8 @@
+// Test-only AndroidX dependency; no application/release dependency changes.
+gradle.afterProject { project ->
+    if (project.path == ':app') {
+        project.dependencies.add('testImplementation', 'androidx.work:work-testing:2.11.2')
+        project.dependencies.add('testImplementation', 'androidx.room:room-runtime:2.7.0')
+        project.android.sourceSets.test.java.srcDir(project.rootProject.file('../tool/workmanager_host'))
+    }
+}
