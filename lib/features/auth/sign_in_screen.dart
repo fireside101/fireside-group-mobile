@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -8,7 +10,15 @@ import '../shell/app_header.dart';
 import 'auth_controller.dart';
 
 /// PI eligibility is decided exclusively by the portal. No native PI queries,
-/// generic signup, confirmation mail, OTP or automatic password reset.
+/// generic signup, confirmation mail or OTP. Password recovery is explicit
+/// ("Forgot password?") and handled by the portal, which emails a link.
+/// User-facing recovery copy, shared with tests.
+abstract final class SignInScreenRecoveryCopy {
+  static const help =
+      'The link opens in your browser. Set a new password there, then come '
+      'back and sign in here with your new password.';
+}
+
 class SignInScreen extends ConsumerStatefulWidget {
   const SignInScreen({super.key});
   @override
@@ -27,8 +37,63 @@ class _SignInScreenState extends ConsumerState<SignInScreen> {
   DateTime? _retryAt;
   bool get _register => _next == 'register';
 
+  static const recoveryCooldown = Duration(seconds: 60);
+  String? _recoveryMessage;
+  bool _recoveryError = false;
+  bool _recovering = false;
+  int _recoverySecondsLeft = 0;
+  Timer? _recoveryTicker;
+
+  // Tick-based (not wall clock) so the countdown is deterministic in tests.
+  void _startRecoveryCooldown(Duration duration) {
+    _recoverySecondsLeft = duration.inSeconds;
+    _recoveryTicker?.cancel();
+    _recoveryTicker = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (!mounted) return timer.cancel();
+      setState(() => _recoverySecondsLeft--);
+      if (_recoverySecondsLeft <= 0) timer.cancel();
+    });
+  }
+
+  Future<void> _forgotPassword() async {
+    if (_busy || _recovering || _recoverySecondsLeft > 0) return;
+    FocusManager.instance.primaryFocus?.unfocus();
+    setState(() {
+      _recovering = true;
+      _recoveryMessage = null;
+    });
+    try {
+      final message = await ref
+          .read(authServiceProvider)
+          .requestPasswordRecovery(_email.text);
+      if (!mounted) return;
+      setState(() {
+        _recoveryMessage = message;
+        _recoveryError = false;
+        _startRecoveryCooldown(recoveryCooldown);
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _recoveryError = true;
+        _recoveryMessage = error is OnboardingException
+            ? error.message
+            : 'Password reset is unavailable. Please try again.';
+        final retry = error is OnboardingException
+            ? error.retryAfterSeconds
+            : null;
+        if (retry != null) {
+          _startRecoveryCooldown(Duration(seconds: retry.clamp(1, 86400)));
+        }
+      });
+    } finally {
+      if (mounted) setState(() => _recovering = false);
+    }
+  }
+
   @override
   void dispose() {
+    _recoveryTicker?.cancel();
     _email.dispose();
     _password.dispose();
     _confirm.dispose();
@@ -40,6 +105,7 @@ class _SignInScreenState extends ConsumerState<SignInScreen> {
     setState(() {
       _next = null;
       _message = null;
+      _recoveryMessage = null;
       _password.clear();
       _confirm.clear();
     });
@@ -238,6 +304,7 @@ class _SignInScreenState extends ConsumerState<SignInScreen> {
                                 if (!_register) _submit();
                               },
                             ),
+                            if (!_register) _recoveryBlock(context, busy),
                             if (_register) ...[
                               const SizedBox(height: 15),
                               TextFormField(
@@ -280,6 +347,64 @@ class _SignInScreenState extends ConsumerState<SignInScreen> {
           ),
         ],
       ),
+    );
+  }
+
+  Widget _recoveryBlock(BuildContext context, bool busy) {
+    final colors = context.appColors;
+    final seconds = _recoverySecondsLeft;
+    final sent = _recoveryMessage != null && !_recoveryError;
+    final label = _recovering
+        ? 'Sending reset link…'
+        : seconds > 0
+        ? 'Resend link in ${seconds}s'
+        : sent
+        ? 'Resend reset link'
+        : 'Forgot password?';
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Align(
+          alignment: Alignment.centerRight,
+          child: TextButton(
+            key: const Key('forgot-password'),
+            onPressed: busy || _recovering || seconds > 0
+                ? null
+                : _forgotPassword,
+            child: Text(label),
+          ),
+        ),
+        if (_recoveryMessage != null)
+          Container(
+            key: const Key('recovery-status'),
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: colors.ivory,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: colors.border),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  _recoveryMessage!,
+                  style: TextStyle(
+                    color: _recoveryError
+                        ? colors.statusBad
+                        : colors.statusGreen,
+                  ),
+                ),
+                if (!_recoveryError) ...[
+                  const SizedBox(height: 6),
+                  Text(
+                    SignInScreenRecoveryCopy.help,
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                ],
+              ],
+            ),
+          ),
+      ],
     );
   }
 }

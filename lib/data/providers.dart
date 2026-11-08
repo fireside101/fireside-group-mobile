@@ -77,10 +77,12 @@ final profileCacheProvider =
     );
 
 class ProfileCacheNotifier extends StateNotifier<AsyncValue<ProfileResponse?>> {
-  ProfileCacheNotifier(this._service) : super(const AsyncValue.data(null));
+  ProfileCacheNotifier(this._service, {FlutterSecureStorage? storage})
+    : _storage = storage ?? const FlutterSecureStorage(),
+      super(const AsyncValue.data(null));
 
   final ProfileService _service;
-  final FlutterSecureStorage _storage = const FlutterSecureStorage();
+  final FlutterSecureStorage _storage;
   String? _userId;
   DateTime? _lastFetched;
   Future<void>? _inFlight;
@@ -186,7 +188,22 @@ class ProfileCacheNotifier extends StateNotifier<AsyncValue<ProfileResponse?>> {
     }
   }
 
-  String _cacheKey(String userId) => 'profile_cache_$userId';
+  static const _cachePrefix = 'profile_cache_';
+  String _cacheKey(String userId) => '$_cachePrefix$userId';
+
+  /// Drops the in-memory profile and every persisted per-user profile cache.
+  Future<void> clearAll() async {
+    _userId = null;
+    _lastFetched = null;
+    _inFlight = null;
+    if (mounted) state = const AsyncValue.data(null);
+    final keys = (await _storage.readAll()).keys
+        .where((k) => k.startsWith(_cachePrefix))
+        .toList();
+    for (final key in keys) {
+      await _storage.delete(key: key);
+    }
+  }
 
   Future<_CachedProfile?> _readCache(String userId) async {
     try {
@@ -306,20 +323,34 @@ class RecentAppsNotifier
 
   final Ref _ref;
 
+  /// Bumped by [clear]; a load or record that started earlier must not
+  /// restore the previous account's list after the purge.
+  int _epoch = 0;
+
   Future<void> _load() async {
+    final epoch = _epoch;
     final repository = _ref.read(recentAppsRepositoryProvider);
     final ids = await repository.read();
     final catalogue = await _ref.read(catalogueProvider.future);
+    if (!mounted || epoch != _epoch) return;
     final byId = {for (final app in catalogue) app.id: app};
     state = AsyncValue.data(
       ids.map((id) => byId[id]).whereType<FiresideApplication>().toList(),
     );
   }
 
+  Future<void> clear() async {
+    _epoch++;
+    state = const AsyncValue.data(<FiresideApplication>[]);
+    await _ref.read(recentAppsRepositoryProvider).clear();
+  }
+
   Future<void> record(String appId) async {
+    final epoch = _epoch;
     final repository = _ref.read(recentAppsRepositoryProvider);
     final ids = await repository.record(appId);
     final catalogue = await _ref.read(catalogueProvider.future);
+    if (!mounted || epoch != _epoch) return;
     final byId = {for (final app in catalogue) app.id: app};
     state = AsyncValue.data(
       ids.map((id) => byId[id]).whereType<FiresideApplication>().toList(),

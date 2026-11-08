@@ -56,8 +56,9 @@ class AuthService {
 
   Future<Map<String, dynamic>> _post(
     String action,
-    Map<String, String> body,
-  ) async {
+    Map<String, String> body, {
+    int successStatus = 200,
+  }) async {
     try {
       final origin = MobileTargets.fromEnvironment().portalOrigin;
       final request =
@@ -80,14 +81,14 @@ class AuthService {
         try {
           data = jsonDecode(utf8.decode(bytes)) as Map<String, dynamic>;
         } catch (_) {
-          if (response.statusCode == 200) {
+          if (response.statusCode == successStatus) {
             throw const OnboardingException(
               'Account service unavailable. Please try again.',
             );
           }
           // Preserve status/Retry-After even for an upstream HTML error body.
         }
-        if (response.statusCode != 200) {
+        if (response.statusCode != successStatus) {
           throw OnboardingException(
             onboardingErrorMessage(response.statusCode, data),
             statusCode: response.statusCode,
@@ -207,9 +208,23 @@ class AuthService {
     return _sessionFromUser(client.auth.currentUser);
   }
 
-  Future<void> sendPasswordReset(String email) async {
-    await _requireClient().auth.resetPasswordForEmail(email.trim());
+  /// Asks the portal to email a single-use recovery link. The portal answers
+  /// 202 with the same message whether or not the account exists; the link
+  /// opens the web reset page and the user then signs in here.
+  Future<String> requestPasswordRecovery(String email) async {
+    final data = await _post('recover', {
+      'email': email.trim(),
+    }, successStatus: 202);
+    final message = data['message'];
+    if (message is! String || message.trim().isEmpty) {
+      return recoveryFallbackMessage;
+    }
+    return message.trim();
   }
+
+  static const recoveryFallbackMessage =
+      'If that email belongs to an eligible Fireside account, a password '
+      'reset link is on its way.';
 
   SupabaseClient _requireClient() {
     final client = _client;

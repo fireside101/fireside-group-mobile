@@ -1,3 +1,5 @@
+> **Release-only repository.** The source of Fireside Group Mobile lives in the private monorepo `fireside101/fireside-group` (`apps/mobile`). This repository receives one sync commit per approved release and runs the signed APK pipeline. Do not commit here directly.
+
 # Fireside Group
 
 Internal application launcher for Fireside Africa employees, built natively in

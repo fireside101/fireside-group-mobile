@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:fireside_group/core/theme/app_theme.dart';
 import 'package:fireside_group/data/services/auth_service.dart';
+import 'package:fireside_group/data/services/session_data_cleaner.dart';
 import 'package:fireside_group/features/auth/auth_controller.dart';
 import 'package:fireside_group/features/auth/sign_in_screen.dart';
 import 'package:flutter/material.dart';
@@ -52,7 +53,12 @@ void main() {
     portal = Portal();
     await tester.pumpWidget(
       ProviderScope(
-        overrides: [authServiceProvider.overrideWithValue(portal)],
+        overrides: [
+          authServiceProvider.overrideWithValue(portal),
+          // Device purge runs on real platform channels; covered separately in
+          // session_data_cleaner_test.dart.
+          sessionDataCleanerProvider.overrideWithValue(SessionDataCleaner([])),
+        ],
         child: MaterialApp(theme: buildTealTheme(), home: const SignInScreen()),
       ),
     );

@@ -1,14 +1,29 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../data/providers.dart';
 import '../../data/services/auth_service.dart';
+import '../../data/services/session_data_cleaner.dart';
 
 final authServiceProvider = Provider<AuthService>((ref) => AuthService());
 
+/// Per-user device data cleared on sign-out and account change (AGENTS.md 5).
+final sessionDataCleanerProvider = Provider<SessionDataCleaner>(
+  (ref) => SessionDataCleaner([
+    clearWebViewData,
+    () => ref.read(profileCacheProvider.notifier).clearAll(),
+    () => ref.read(recentAppsProvider.notifier).clear(),
+  ]),
+);
+
 class AuthController extends StateNotifier<AsyncValue<AuthSession?>> {
-  AuthController(this._service) : super(const AsyncValue.loading()) {
+  AuthController(this._service, {SessionDataCleaner? cleaner})
+    // ignore: prefer_initializing_formals
+    : _cleaner = cleaner,
+      super(const AsyncValue.loading()) {
     _restore();
   }
   final AuthService _service;
+  final SessionDataCleaner? _cleaner;
   int _operation = 0;
   bool get isAuthenticated =>
       state.hasValue && state.value != null && !state.isLoading;
@@ -28,6 +43,10 @@ class AuthController extends StateNotifier<AsyncValue<AuthSession?>> {
     final operation = ++_operation;
     state = const AsyncValue.loading();
     try {
+      // Sign-in only happens while signed out; the previous account (possibly
+      // expired rather than signed out) must not leak into the new one.
+      final cleaner = _cleaner;
+      if (cleaner != null) await cleaner.purge();
       final session = await _service.signIn(email: email, password: password);
       if (!_current(operation)) return false;
       state = AsyncValue.data(session);
@@ -59,16 +78,12 @@ class AuthController extends StateNotifier<AsyncValue<AuthSession?>> {
     }
   }
 
-  Future<bool> sendPasswordReset(String email) async {
-    await _service.sendPasswordReset(email);
-    return true;
-  }
-
   Future<void> signOut() async {
     final operation = ++_operation;
     try {
       await _service.signOut();
     } finally {
+      await _cleaner?.purge();
       if (_current(operation)) state = const AsyncValue.data(null);
     }
   }
@@ -76,5 +91,8 @@ class AuthController extends StateNotifier<AsyncValue<AuthSession?>> {
 
 final authControllerProvider =
     StateNotifierProvider<AuthController, AsyncValue<AuthSession?>>(
-      (ref) => AuthController(ref.watch(authServiceProvider)),
+      (ref) => AuthController(
+        ref.watch(authServiceProvider),
+        cleaner: ref.read(sessionDataCleanerProvider),
+      ),
     );

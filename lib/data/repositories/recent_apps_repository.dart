@@ -15,6 +15,12 @@ class RecentAppsRepository {
     return prefs.getStringList(_key) ?? const [];
   }
 
+  /// Recent apps reveal what a person used; they are cleared on account change.
+  Future<void> clear() async {
+    final prefs = await _get();
+    await prefs.remove(_key);
+  }
+
   Future<List<String>> record(String appId) async {
     final prefs = await _get();
     final current = prefs.getStringList(_key) ?? const <String>[];

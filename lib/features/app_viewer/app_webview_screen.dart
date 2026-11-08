@@ -12,6 +12,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 import 'package:webview_flutter_android/webview_flutter_android.dart';
 
+import '../../data/services/session_data_cleaner.dart';
 import '../../core/mobile_targets.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_typography.dart';
@@ -144,6 +145,10 @@ class _AppWebViewScreenState extends ConsumerState<AppWebViewScreen> {
       _security.accountChanged(event.session?.user.id);
       _cancelDownloads();
       _security.close();
+      // The old account's cookies and web storage must not survive the switch.
+      unawaited(
+        clearWebViewData(controller: _controller).catchError((Object _) {}),
+      );
       // Redirect rather than popping a route the auth router may have replaced.
       if (mounted) context.go('/');
     });

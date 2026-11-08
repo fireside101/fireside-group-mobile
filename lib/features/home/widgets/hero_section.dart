@@ -8,9 +8,12 @@ import '../../../data/providers.dart';
 import '../../auth/auth_controller.dart';
 import '../widgets/search_bar.dart';
 
-/// Gradient + flame-mark stand-in for the hero background image. Drop
-/// `assets/images/hero_placeholder.jpg` into this `Stack` when ready.
+/// Approved web hero (`apps/web/public/images/hero.jpeg`) as a bundled,
+/// optimized 1080px WebP derivative, cover-cropped under a dark gradient so the
+/// greeting and search stay readable. The brand gradient remains the fallback.
 class HeroSection extends ConsumerWidget {
+  static const imageAsset = 'assets/images/hero.webp';
+
   final TextEditingController searchController;
   final ValueChanged<String> onSearchChanged;
 
@@ -34,9 +37,14 @@ class HeroSection extends ConsumerWidget {
     final greeting = greetingName.isEmpty
         ? 'Welcome back.'
         : 'Welcome back, $greetingName.';
+    // Decode no larger than the rendered width to bound image memory.
+    final media = MediaQuery.of(context);
+    final decodeWidth = (media.size.width * media.devicePixelRatio)
+        .clamp(1, 1080)
+        .round();
     return Container(
       margin: const EdgeInsets.fromLTRB(16, 16, 16, 4),
-      padding: const EdgeInsets.fromLTRB(20, 32, 20, 32),
+      clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(
         border: Border.all(color: Colors.white.withValues(alpha: 0.28)),
         borderRadius: BorderRadius.circular(28),
@@ -53,39 +61,77 @@ class HeroSection extends ConsumerWidget {
           colors: [colors.primaryDark, colors.primary, colors.accent],
         ),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      child: Stack(
         children: [
-          Text(
-            greeting,
-            style: AppTypography.displayMedium().copyWith(color: Colors.white),
+          Positioned.fill(
+            child: Image.asset(
+              imageAsset,
+              key: const Key('hero-image'),
+              fit: BoxFit.cover,
+              alignment: const Alignment(0.3, -0.2),
+              cacheWidth: decodeWidth,
+              excludeFromSemantics: true,
+              errorBuilder: (context, error, stack) => const SizedBox.shrink(),
+            ),
           ),
-          const SizedBox(height: 6),
-          Text(
-            'Launch any internal tool. Your apps are one tap away.',
-            style: Theme.of(context).textTheme.bodyLarge
-                ?.copyWith(color: Colors.white.withValues(alpha: 0.85)),
-          ),
-          const SizedBox(height: 24),
-          AppSearchBar(
-            controller: searchController,
-            hint: 'Search applications',
-            onChanged: onSearchChanged,
-          ),
-          const SizedBox(height: 10),
-          Row(
-            children: [
-              const Icon(LucideIcons.sparkles, color: Colors.white, size: 16),
-              const SizedBox(width: 6),
-              Text(
-                'Fireside Africa · Internal',
-                style: Theme.of(context).textTheme.bodySmall
-                    ?.copyWith(color: Colors.white.withValues(alpha: 0.75)),
+          Positioned.fill(
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [
+                    Colors.black.withValues(alpha: 0.30),
+                    Colors.black.withValues(alpha: 0.55),
+                    Colors.black.withValues(alpha: 0.78),
+                  ],
+                  stops: const [0, 0.5, 1],
+                ),
               ),
-            ],
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 32, 20, 32),
+            child: _content(context, greeting),
           ),
         ],
       ),
+    );
+  }
+
+  Widget _content(BuildContext context, String greeting) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          greeting,
+          style: AppTypography.displayMedium().copyWith(color: Colors.white),
+        ),
+        const SizedBox(height: 6),
+        Text(
+          'Launch any internal tool. Your apps are one tap away.',
+          style: Theme.of(context).textTheme.bodyLarge
+              ?.copyWith(color: Colors.white.withValues(alpha: 0.85)),
+        ),
+        const SizedBox(height: 24),
+        AppSearchBar(
+          controller: searchController,
+          hint: 'Search applications',
+          onChanged: onSearchChanged,
+        ),
+        const SizedBox(height: 10),
+        Row(
+          children: [
+            const Icon(LucideIcons.sparkles, color: Colors.white, size: 16),
+            const SizedBox(width: 6),
+            Text(
+              'Fireside Africa · Internal',
+              style: Theme.of(context).textTheme.bodySmall
+                  ?.copyWith(color: Colors.white.withValues(alpha: 0.75)),
+            ),
+          ],
+        ),
+      ],
     );
   }
 }

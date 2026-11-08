@@ -7,7 +7,6 @@ import '../../../features/app_viewer/app_webview_screen.dart';
 import '../../../features/applications/all_applications_screen.dart';
 import '../../../features/admin_logs/admin_logs_screen.dart';
 import '../../../features/auth/auth_controller.dart';
-import '../../../features/auth/account_setup_screen.dart';
 import '../../../features/auth/sign_in_screen.dart';
 import '../../../features/home/home_screen.dart';
 import '../../../features/profile/profile_screen.dart';
@@ -24,7 +23,6 @@ final routerProvider = Provider<GoRouter>((ref) {
       final atAuthEntry =
           state.matchedLocation == '/sign-in' ||
           state.matchedLocation == '/register' ||
-          state.matchedLocation == '/reset-password' ||
           state.matchedLocation == '/account-setup';
 
       if (!authenticated && !atAuthEntry) return '/sign-in';
@@ -37,10 +35,10 @@ final routerProvider = Provider<GoRouter>((ref) {
         builder: (context, state) => const SignInScreen(),
       ),
       GoRoute(path: '/register', redirect: (context, state) => '/sign-in'),
+      // Recovery now starts on the sign-in password step ("Forgot password?").
       GoRoute(
         path: '/reset-password',
-        builder: (context, state) =>
-            const AccountSetupScreen(mode: AccountSetupMode.resetPassword),
+        redirect: (context, state) => '/sign-in',
       ),
       GoRoute(
         path: '/account-setup',
